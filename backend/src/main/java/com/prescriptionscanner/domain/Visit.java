@@ -73,6 +73,11 @@ public class Visit extends BaseEntity {
 	@Column(name = "raw_ai_json", columnDefinition = "jsonb")
 	private String rawAiJson;
 
+	/** The reviewed/edited extraction (all page types), stored as JSON. */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "reviewed_json", columnDefinition = "jsonb")
+	private String reviewedJson;
+
 	@Column(name = "is_verified", nullable = false)
 	private boolean isVerified = false;
 
@@ -110,6 +115,8 @@ public class Visit extends BaseEntity {
 	public void setScanFilePath(String scanFilePath) { this.scanFilePath = scanFilePath; }
 	public String getRawAiJson() { return rawAiJson; }
 	public void setRawAiJson(String rawAiJson) { this.rawAiJson = rawAiJson; }
+	public String getReviewedJson() { return reviewedJson; }
+	public void setReviewedJson(String reviewedJson) { this.reviewedJson = reviewedJson; }
 	public boolean isVerified() { return isVerified; }
 	public void setVerified(boolean verified) { isVerified = verified; }
 	public Long getVerifiedBy() { return verifiedBy; }

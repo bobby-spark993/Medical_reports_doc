@@ -21,15 +21,16 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
 	List<Patient> findByNameAndPhone(String name, String phone);
 
 	/**
-	 * Every patient whose name matches exactly (case-insensitive). Gender and age
-	 * are compared in code after normalisation, because reports write "Female"
-	 * and "F" interchangeably.
+	 * Every patient whose name matches after normalisation (lower-case, trimmed
+	 * and inner whitespace collapsed). Gender and age are compared in code after
+	 * normalisation, because reports write "Female" and "F" interchangeably and
+	 * "26" and "26 years" interchangeably.
 	 */
-	@Query("""
-			SELECT p FROM Patient p
-			WHERE LOWER(p.name) = LOWER(:name)
+	@Query(value = """
+			SELECT * FROM patients p
+			WHERE regexp_replace(lower(trim(p.name)), '[[:space:]]+', ' ', 'g') = :name
 			ORDER BY p.id ASC
-			""")
+			""", nativeQuery = true)
 	List<Patient> findAllByNormalizedName(@Param("name") String name);
 
 	/** Case-insensitive partial match across name, pid and phone. */
@@ -52,18 +53,4 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
 			ORDER BY p.name ASC, p.id ASC
 			""")
 	List<Patient> searchByNameAndPid(@Param("name") String name, @Param("pid") String pid);
-
-	/**
-	 * Candidate duplicates for the "never auto-merge" rule: same normalized name
-	 * plus age and gender. The caller passes an already-normalized name.
-	 */
-	@Query("""
-			SELECT p FROM Patient p
-			WHERE LOWER(p.name) = LOWER(:name)
-			  AND LOWER(COALESCE(p.gender, '')) = LOWER(COALESCE(:gender, ''))
-			  AND LOWER(COALESCE(p.age, '')) = LOWER(COALESCE(:age, ''))
-			ORDER BY p.id ASC
-			""")
-	List<Patient> findPossibleMatches(@Param("name") String name,
-			@Param("gender") String gender, @Param("age") String age);
 }

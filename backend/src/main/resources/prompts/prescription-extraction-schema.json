@@ -1,0 +1,111 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "document_type": { "type": "STRING", "enum": ["PRESCRIPTION", "LAB_REPORT", "RADIOLOGY_REPORT", "OTHER"] },
+    "document_title": { "type": "STRING", "nullable": true },
+    "facility": {
+      "type": "OBJECT", "nullable": true,
+      "properties": {
+        "name": { "type": "STRING", "nullable": true },
+        "address": { "type": "STRING", "nullable": true },
+        "phone": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "email": { "type": "STRING", "nullable": true },
+        "website": { "type": "STRING", "nullable": true }
+      }
+    },
+    "patient": {
+      "type": "OBJECT",
+      "properties": {
+        "pid": { "type": "STRING", "nullable": true },
+        "patient_ref_no": { "type": "STRING", "nullable": true },
+        "name": { "type": "STRING", "nullable": true },
+        "gender": { "type": "STRING", "nullable": true },
+        "age": { "type": "STRING", "nullable": true },
+        "age_years": { "type": "INTEGER", "nullable": true },
+        "marital_status": { "type": "STRING", "nullable": true },
+        "address": { "type": "STRING", "nullable": true },
+        "pt_regd_valid_upto": { "type": "STRING", "nullable": true }
+      }
+    },
+    "doctor": {
+      "type": "OBJECT", "nullable": true,
+      "properties": {
+        "name": { "type": "STRING", "nullable": true },
+        "qualification": { "type": "STRING", "nullable": true },
+        "registration_no": { "type": "STRING", "nullable": true },
+        "designation": { "type": "STRING", "nullable": true }
+      }
+    },
+    "referred_by": { "type": "STRING", "nullable": true },
+    "appointment": {
+      "type": "OBJECT", "nullable": true,
+      "properties": {
+        "date": { "type": "STRING", "nullable": true },
+        "valid_upto": { "type": "STRING", "nullable": true },
+        "appointment_no": { "type": "STRING", "nullable": true },
+        "mode": { "type": "STRING", "nullable": true }
+      }
+    },
+    "report": {
+      "type": "OBJECT", "nullable": true,
+      "properties": {
+        "report_id": { "type": "STRING", "nullable": true },
+        "received_on": { "type": "STRING", "nullable": true },
+        "reported_on": { "type": "STRING", "nullable": true },
+        "report_date": { "type": "STRING", "nullable": true },
+        "signed_by": { "type": "STRING", "nullable": true },
+        "signed_by_designation": { "type": "STRING", "nullable": true }
+      }
+    },
+    "chief_complaints": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "examination": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "diagnoses": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "medicines": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "name": { "type": "STRING" },
+          "dose": { "type": "STRING", "nullable": true },
+          "frequency": { "type": "STRING", "nullable": true },
+          "duration": { "type": "STRING", "nullable": true },
+          "instructions": { "type": "STRING", "nullable": true }
+        },
+        "required": ["name"]
+      }
+    },
+    "investigations_advised": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "advice": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "follow_up_date": { "type": "STRING", "nullable": true },
+    "lab_results": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "group": { "type": "STRING", "nullable": true },
+          "test": { "type": "STRING" },
+          "value": { "type": "STRING", "nullable": true },
+          "unit": { "type": "STRING", "nullable": true },
+          "reference_range": { "type": "STRING", "nullable": true },
+          "flag": { "type": "STRING", "enum": ["L", "H"], "nullable": true },
+          "abnormal": { "type": "BOOLEAN" },
+          "remark": { "type": "STRING", "nullable": true }
+        },
+        "required": ["test", "abnormal"]
+      }
+    },
+    "radiology": {
+      "type": "OBJECT", "nullable": true,
+      "properties": {
+        "examination": { "type": "STRING", "nullable": true },
+        "protocol": { "type": "STRING", "nullable": true },
+        "observations": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "impression": { "type": "STRING", "nullable": true }
+      }
+    },
+    "handwriting_confidence": { "type": "STRING", "enum": ["LOW", "MEDIUM", "HIGH"], "nullable": true },
+    "notes": { "type": "STRING", "nullable": true },
+    "uncertain_fields": { "type": "ARRAY", "items": { "type": "STRING" } }
+  },
+  "required": ["document_type", "patient", "uncertain_fields"]
+}

@@ -57,8 +57,8 @@ public class AppProperties {
 	public static class Gemini {
 		private String apiKey = "";
 		private String model = "gemini-3.8-flash";
-		/** Used once if the primary model answers 503/overloaded. Blank disables the fallback. */
-		private String fallbackModel = "gemini-3.8-flash";
+		/** Comma-separated models tried in order when the primary answers 503/overloaded. */
+		private String fallbackModel = "gemini-3.7-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite";
 		private long timeoutMs = 45_000;
 		private String baseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 

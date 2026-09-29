@@ -29,6 +29,7 @@ import com.prescriptionscanner.domain.Visit;
 import com.prescriptionscanner.dto.ApiError;
 import com.prescriptionscanner.dto.GeminiExtraction;
 import com.prescriptionscanner.dto.PatientSummaryDto;
+import com.prescriptionscanner.dto.ScanDraftResponse;
 import com.prescriptionscanner.dto.UploadResponse;
 import com.prescriptionscanner.dto.VerifyRequest;
 import com.prescriptionscanner.dto.VerifyResponse;
@@ -87,15 +88,7 @@ public class PrescriptionService {
 	public UploadResponse upload(MultipartFile file, boolean consent, String contextName, String contextPhone,
 			String contextPid, Long actorId, String clientIp) {
 
-		Duration window = Duration.ofMinutes(props.getRateLimit().getUploadWindowMinutes());
-		RateLimitService.Decision decision = rateLimitService.check(
-				"upload:" + clientIp + ":" + actorId,
-				props.getRateLimit().getUploadMax(),
-				window);
-		if (!decision.allowed()) {
-			throw ApiException.tooManyRequests("Upload limit reached. Try again in "
-					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).");
-		}
+		enforceRateLimit(actorId, clientIp);
 
 		// DPDP Act 2023: consent is a hard gate, not a nicety.
 		if (!consent) {
@@ -104,39 +97,9 @@ public class PrescriptionService {
 					+ "Tick the consent box and try again.");
 		}
 
-		if (file == null || file.isEmpty()) {
-			throw ApiException.badRequest("No file was uploaded. Choose a JPG, PNG or PDF first.");
-		}
-
-		long maxBytes = storageService.maxBytes();
-		if (file.getSize() > maxBytes) {
-			throw ApiException.badRequest(String.format(
-					"That file is %.1f MB. The maximum is %d MB.",
-					file.getSize() / (1024.0 * 1024.0), props.getUpload().getMaxMb()));
-		}
-
-		byte[] bytes;
-		try {
-			bytes = file.getBytes();
-		} catch (Exception ex) {
-			throw ApiException.badRequest("Could not read the uploaded file.");
-		}
-		if (bytes.length == 0) {
-			throw ApiException.badRequest("That file is empty.");
-		}
-
-		String declaredMime = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
-		if (!storageService.isAllowedMime(declaredMime)) {
-			throw ApiException.badRequest("Only JPG, PNG, WebP or PDF files are accepted.");
-		}
-
-		String detectedMime = StorageService.sniffMime(bytes);
-		if (detectedMime == null) {
-			throw ApiException.badRequest(
-					"That file is not a valid JPG, PNG, WebP or PDF. It may be corrupted or renamed.");
-		}
-		// Trust the bytes over the browser's guess.
-		String mimeType = "application/pdf".equals(detectedMime) ? "application/pdf" : detectedMime;
+		ValidatedFile validated = validateFile(file);
+		byte[] bytes = validated.bytes();
+		String mimeType = validated.mimeType();
 
 		StorageService.StoredFile stored = storageService.save(bytes, mimeType);
 
@@ -170,11 +133,83 @@ public class PrescriptionService {
 	}
 
 	/**
+	 * Scan-only step for the upload screen: the same validation and Gemini
+	 * extraction as {@link #upload}, but stores nothing and writes no draft, so
+	 * the user can pre-fill the patient context before saving. Returns the
+	 * existing patient matched by pid first, else name + age + gender.
+	 */
+	public ScanDraftResponse scan(MultipartFile file, Long actorId, String clientIp) {
+		enforceRateLimit(actorId, clientIp);
+		ValidatedFile validated = validateFile(file);
+		GeminiExtraction extraction = geminiService.extract(validated.bytes(), validated.mimeType(),
+				buildContextHint(null, null, null));
+		PatientSummaryDto matchedPatient = findMatchedPatient(extraction)
+				.map(this::toSummary)
+				.orElse(null);
+		return ScanDraftResponse.of(extraction, matchedPatient);
+	}
+
+	private record ValidatedFile(byte[] bytes, String mimeType) {
+	}
+
+	/** Shared upload throttling for the scan and save steps. */
+	private void enforceRateLimit(Long actorId, String clientIp) {
+		Duration window = Duration.ofMinutes(props.getRateLimit().getUploadWindowMinutes());
+		RateLimitService.Decision decision = rateLimitService.check(
+				"upload:" + clientIp + ":" + actorId,
+				props.getRateLimit().getUploadMax(),
+				window);
+		if (!decision.allowed()) {
+			throw ApiException.tooManyRequests("Upload limit reached. Try again in "
+					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).");
+		}
+	}
+
+	/** Size, emptiness and MIME checks shared by the scan and save steps. */
+	private ValidatedFile validateFile(MultipartFile file) {
+		if (file == null || file.isEmpty()) {
+			throw ApiException.badRequest("No file was uploaded. Choose a JPG, PNG or PDF first.");
+		}
+
+		long maxBytes = storageService.maxBytes();
+		if (file.getSize() > maxBytes) {
+			throw ApiException.badRequest(String.format(
+					"That file is %.1f MB. The maximum is %d MB.",
+					file.getSize() / (1024.0 * 1024.0), props.getUpload().getMaxMb()));
+		}
+
+		byte[] bytes;
+		try {
+			bytes = file.getBytes();
+		} catch (Exception ex) {
+			throw ApiException.badRequest("Could not read the uploaded file.");
+		}
+		if (bytes.length == 0) {
+			throw ApiException.badRequest("That file is empty.");
+		}
+
+		String declaredMime = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
+		if (!storageService.isAllowedMime(declaredMime)) {
+			throw ApiException.badRequest("Only JPG, PNG, WebP or PDF files are accepted.");
+		}
+
+		String detectedMime = StorageService.sniffMime(bytes);
+		if (detectedMime == null) {
+			throw ApiException.badRequest(
+					"That file is not a valid JPG, PNG, WebP or PDF. It may be corrupted or renamed.");
+		}
+		// Trust the bytes over the browser's guess.
+		String mimeType = "application/pdf".equals(detectedMime) ? "application/pdf" : detectedMime;
+		return new ValidatedFile(bytes, mimeType);
+	}
+
+	/**
 	 * The existing patient a new document should be attached to: exact pid first,
 	 * then name + age + gender. Empty means "show a new patient folder".
 	 */
 	private Optional<Patient> findMatchedPatient(GeminiExtraction extraction) {
 		if (extraction == null || extraction.patient() == null) {
+			log.info("Patient match skipped: extraction has no patient block");
 			return Optional.empty();
 		}
 		GeminiExtraction.PatientInfo info = extraction.patient();
@@ -182,10 +217,21 @@ public class PrescriptionService {
 		if (pid != null) {
 			Optional<Patient> byPid = patientRepository.findByPid(pid);
 			if (byPid.isPresent()) {
+				log.info("Patient match: found by PID");
 				return byPid;
 			}
+			log.info("Patient match: PID not in DB, falling back to name + age");
 		}
-		return patientMatchingService.matchByDemographics(info.name(), info.age(), info.gender());
+		if (blankToNull(info.name()) == null) {
+			log.info("Patient match skipped: no patient name in extraction");
+			return Optional.empty();
+		}
+		// Fall back to age_years when the model only filled the numeric age.
+		String age = blankToNull(info.age());
+		if (age == null && info.ageYears() != null) {
+			age = String.valueOf(info.ageYears());
+		}
+		return patientMatchingService.matchByDemographics(info.name(), age, info.gender());
 	}
 
 	private PatientSummaryDto toSummary(Patient patient) {
@@ -278,8 +324,7 @@ public class PrescriptionService {
 	}
 
 	private GeminiExtraction emptyExtraction() {
-		return new GeminiExtraction(null, null, null, null, null, List.of(), List.of(), List.of(), List.of(),
-				null, null, List.of());
+		return GeminiExtraction.empty();
 	}
 
 	/**
@@ -399,6 +444,13 @@ public class PrescriptionService {
 				draft.setRawAiJson(mapper.writeValueAsString(request.rawAiJson()));
 			} catch (Exception ex) {
 				log.warn("Could not store submitted rawAiJson: {}", ex.getMessage());
+			}
+		}
+		if (request.reviewedJson() != null) {
+			try {
+				draft.setReviewedJson(mapper.writeValueAsString(request.reviewedJson()));
+			} catch (Exception ex) {
+				log.warn("Could not store submitted reviewedJson: {}", ex.getMessage());
 			}
 		}
 

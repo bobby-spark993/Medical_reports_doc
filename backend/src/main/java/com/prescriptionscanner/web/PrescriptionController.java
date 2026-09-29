@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prescriptionscanner.dto.DraftResponse;
+import com.prescriptionscanner.dto.ScanDraftResponse;
 import com.prescriptionscanner.dto.UploadResponse;
 import com.prescriptionscanner.dto.VerifyRequest;
 import com.prescriptionscanner.dto.VerifyResponse;
@@ -57,6 +58,21 @@ public class PrescriptionController {
 				contextPid,
 				user.getId(),
 				ClientIp.of(http));
+	}
+
+	/**
+	 * Scan-only: validates the file and runs Gemini, but stores nothing and
+	 * writes no draft. Used by the upload screen to pre-fill the patient
+	 * context before the user saves.
+	 */
+	@PostMapping(value = "/scan", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public ScanDraftResponse scan(
+			@RequestParam("file") MultipartFile file,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.scan(file, user.getId(), ClientIp.of(http));
 	}
 
 	/** Draft/visit data for the review screen. */

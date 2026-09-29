@@ -56,7 +56,7 @@ class PrescriptionPatientLinkIntegrationTest {
 				new VerifyRequest.PatientInput(null, name, gender, age, null, null, null, null),
 				new VerifyRequest.DoctorInput("Dr. Test", "MD", null, null, null),
 				new VerifyRequest.VisitInput(visitDate, visitTime, null, null, null, null, null),
-				List.of(), List.of(), List.of(), null);
+				List.of(), List.of(), List.of(), null, null);
 	}
 
 	@Test

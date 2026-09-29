@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,8 @@ import com.prescriptionscanner.repository.PatientRepository;
  */
 @Service
 public class PatientMatchingService {
+
+	private static final Logger log = LoggerFactory.getLogger(PatientMatchingService.class);
 
 	private final PatientRepository patientRepository;
 
@@ -44,8 +48,9 @@ public class PatientMatchingService {
 	}
 
 	/**
-	 * Candidates sharing the normalized name plus age and gender. These are
-	 * returned to the user only - the system never auto-merges on demographics,
+	 * Candidates sharing the normalized name plus age and gender. Gender and age
+	 * are normalized ("Female" == "F", "26 years" == "26"), so these are only
+	 * ever returned to the user - the system never auto-merges on demographics,
 	 * because two different people can share a name, age and gender.
 	 */
 	@Transactional(readOnly = true)
@@ -53,26 +58,53 @@ public class PatientMatchingService {
 		if (name == null || name.isBlank()) {
 			return List.of();
 		}
-		return patientRepository.findPossibleMatches(normalizeName(name), clean(gender), clean(age));
+		String normalizedGender = normalizeGender(gender);
+		String normalizedAge = normalizeAge(age);
+		return patientRepository.findAllByNormalizedName(normalizeName(name)).stream()
+				.filter(p -> normalizedGender.isEmpty() || normalizedGender.equals(normalizeGender(p.getGender())))
+				.filter(p -> normalizedAge.isEmpty() || normalizedAge.equals(normalizeAge(p.getAge())))
+				.toList();
 	}
 
 	/**
-	 * First existing patient with the same name + age + gender. Used to add a new
-	 * document to an existing patient folder. All three must be present: matching
-	 * on a name alone (or only some demographics) would merge unrelated people.
+	 * Existing patient for a document, matched on name plus age. Age is compared
+	 * by number only ("26" == "26 years" == "26 yrs"). Gender is used to
+	 * disambiguate, and when age is missing on the document it can match on
+	 * name + gender instead - so a single missing field never blocks the match.
 	 */
 	@Transactional(readOnly = true)
 	public Optional<Patient> matchByDemographics(String name, String age, String gender) {
 		String normalizedName = normalizeName(name);
-		String normalizedAge = normalizeAge(age);
-		String normalizedGender = normalizeGender(gender);
-		if (normalizedName.isEmpty() || normalizedAge.isEmpty() || normalizedGender.isEmpty()) {
+		if (normalizedName.isEmpty()) {
 			return Optional.empty();
 		}
-		return patientRepository.findAllByNormalizedName(normalizedName).stream()
-				.filter(p -> normalizedAge.equals(normalizeAge(p.getAge())))
-				.filter(p -> normalizedGender.equals(normalizeGender(p.getGender())))
-				.findFirst();
+		String normalizedAge = normalizeAge(age);
+		String normalizedGender = normalizeGender(gender);
+		if (normalizedAge.isEmpty() && normalizedGender.isEmpty()) {
+			return Optional.empty();
+		}
+
+		List<Patient> byName = patientRepository.findAllByNormalizedName(normalizedName);
+		List<Patient> sameAge = byName.stream()
+				.filter(p -> normalizedAge.isEmpty() || normalizedAge.equals(normalizeAge(p.getAge())))
+				.toList();
+
+		// No PII: only presence flags and counts, so a failed match is diagnosable.
+		log.info("Patient match attempt: namePresent={} agePresent={} genderPresent={} nameCandidates={} sameAge={}",
+				true, !normalizedAge.isEmpty(), !normalizedGender.isEmpty(), byName.size(), sameAge.size());
+
+		if (sameAge.isEmpty()) {
+			return Optional.empty();
+		}
+		if (!normalizedGender.isEmpty()) {
+			Optional<Patient> byGender = sameAge.stream()
+					.filter(p -> normalizedGender.equals(normalizeGender(p.getGender())))
+					.findFirst();
+			if (byGender.isPresent()) {
+				return byGender;
+			}
+		}
+		return Optional.of(sameAge.get(0));
 	}
 
 	/** Trim, collapse internal whitespace and lowercase, so "SUSHILA  DEVI " == "sushila devi". */
@@ -92,17 +124,18 @@ public class PatientMatchingService {
 		return value.isEmpty() ? "" : value.substring(0, 1);
 	}
 
-	/** Keeps just the digits so "43" == "43 years" == "043". */
+	/** Keeps just the first number so "43" == "43 years" == "043" == "26 years 6 months". */
 	public static String normalizeAge(String raw) {
 		if (raw == null) {
 			return "";
 		}
-		String digits = raw.replaceAll("\\D", "");
-		if (digits.isEmpty()) {
-			return raw.trim().toLowerCase(Locale.ROOT);
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\d+").matcher(raw);
+		if (matcher.find()) {
+			String digits = matcher.group();
+			String stripped = digits.replaceFirst("^0+(?=\\d)", "");
+			return stripped.isEmpty() ? digits : stripped;
 		}
-		String stripped = digits.replaceFirst("^0+(?=\\d)", "");
-		return stripped.isEmpty() ? digits : stripped;
+		return raw.trim().toLowerCase(Locale.ROOT);
 	}
 
 	/**
@@ -118,9 +151,5 @@ public class PatientMatchingService {
 			return null;
 		}
 		return digits.length() <= 6 ? digits : digits.substring(digits.length() - 6);
-	}
-
-	private static String clean(String value) {
-		return value == null ? "" : value.trim();
 	}
 }

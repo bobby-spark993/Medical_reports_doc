@@ -66,11 +66,19 @@ class PatientMatchingServiceTest {
 	}
 
 	@Test
-	void possibleMatches_normalizesNameBeforeQuerying() {
+	void possibleMatches_normalizesNameGenderAndAge() {
 		Patient candidate = new Patient();
 		candidate.setId(3L);
-		when(patientRepository.findPossibleMatches("sushila devi", "F", "43"))
-				.thenReturn(List.of(candidate));
+		candidate.setName("SUSHILA DEVI");
+		candidate.setGender("Female");
+		candidate.setAge("43 years");
+		Patient different = new Patient();
+		different.setId(4L);
+		different.setName("Sushila Devi");
+		different.setGender("M");
+		different.setAge("43");
+		when(patientRepository.findAllByNormalizedName("sushila devi"))
+				.thenReturn(List.of(candidate, different));
 
 		assertThat(service.possibleMatches("  SUSHILA   DEVI ", " F ", "43"))
 				.containsExactly(candidate);
@@ -90,11 +98,24 @@ class PatientMatchingServiceTest {
 	}
 
 	@Test
-	void normalizeAge_keepsDigitsOnly() {
+	void normalizeAge_keepsFirstNumber() {
 		assertThat(PatientMatchingService.normalizeAge("43")).isEqualTo("43");
 		assertThat(PatientMatchingService.normalizeAge("43 years")).isEqualTo("43");
 		assertThat(PatientMatchingService.normalizeAge("043")).isEqualTo("43");
+		assertThat(PatientMatchingService.normalizeAge("26 years 6 months")).isEqualTo("26");
 		assertThat(PatientMatchingService.normalizeAge(null)).isEmpty();
+	}
+
+	@Test
+	void matchByDemographics_toleratesFemaleVsF_and_yearsSuffix() {
+		Patient candidate = new Patient();
+		candidate.setId(7L);
+		candidate.setName("Sneha Kumari");
+		candidate.setGender("Female");
+		candidate.setAge("26 years");
+		when(patientRepository.findAllByNormalizedName("sneha kumari")).thenReturn(List.of(candidate));
+
+		assertThat(service.matchByDemographics("SNEHA KUMARI", "26", "F")).contains(candidate);
 	}
 
 	@Test
@@ -110,20 +131,62 @@ class PatientMatchingServiceTest {
 	}
 
 	@Test
-	void matchByDemographics_requiresNameAgeAndGender() {
+	void matchByDemographics_requiresNameAndAge() {
 		assertThat(service.matchByDemographics("Sushila Devi", "  ", "F")).isEmpty();
-		assertThat(service.matchByDemographics("Sushila Devi", "43", null)).isEmpty();
+		assertThat(service.matchByDemographics("   ", "43", "F")).isEmpty();
 	}
 
 	@Test
-	void matchByDemographics_skipsDifferentAgeOrGender() {
+	void matchByDemographics_skipsDifferentAge() {
 		Patient other = new Patient();
 		other.setId(6L);
+		other.setName("Sushila Devi");
+		other.setGender("F");
+		other.setAge("44");
+		when(patientRepository.findAllByNormalizedName("sushila devi")).thenReturn(List.of(other));
+
+		assertThat(service.matchByDemographics("Sushila Devi", "43", "F")).isEmpty();
+	}
+
+	@Test
+	void matchByDemographics_matchesByNameAndAge_evenWhenGenderDiffers() {
+		Patient other = new Patient();
+		other.setId(8L);
 		other.setName("Sushila Devi");
 		other.setGender("M");
 		other.setAge("43");
 		when(patientRepository.findAllByNormalizedName("sushila devi")).thenReturn(List.of(other));
 
-		assertThat(service.matchByDemographics("Sushila Devi", "43", "F")).isEmpty();
+		assertThat(service.matchByDemographics("Sushila Devi", "43", "F")).contains(other);
+	}
+
+	@Test
+	void matchByDemographics_prefersGenderWhenSeveralShareNameAndAge() {
+		Patient wrongGender = new Patient();
+		wrongGender.setId(9L);
+		wrongGender.setName("Sushila Devi");
+		wrongGender.setGender("M");
+		wrongGender.setAge("43");
+		Patient rightGender = new Patient();
+		rightGender.setId(10L);
+		rightGender.setName("Sushila Devi");
+		rightGender.setGender("Female");
+		rightGender.setAge("43 years");
+		when(patientRepository.findAllByNormalizedName("sushila devi"))
+				.thenReturn(List.of(wrongGender, rightGender));
+
+		assertThat(service.matchByDemographics("Sushila Devi", "43", "F")).contains(rightGender);
+	}
+
+	@Test
+	void matchByDemographics_canMatchWithoutAge_usingGender() {
+		Patient candidate = new Patient();
+		candidate.setId(11L);
+		candidate.setName("Sushila Devi");
+		candidate.setGender("Female");
+		candidate.setAge(null);
+		when(patientRepository.findAllByNormalizedName("sushila devi")).thenReturn(List.of(candidate));
+
+		assertThat(service.matchByDemographics("Sushila Devi", null, "F")).contains(candidate);
 	}
 }

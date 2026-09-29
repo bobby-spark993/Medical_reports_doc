@@ -24,11 +24,16 @@ export default function UploadPage() {
   const [contextPhone, setContextPhone] = useState('')
   const [contextPid, setContextPid] = useState('')
   const [error, setError] = useState(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanned, setScanned] = useState(false)
+  const [scanMatch, setScanMatch] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null)
 
   function selectFile(next) {
     setError(null)
+    setScanned(false)
+    setScanMatch(null)
     if (!next) return
     if (!ACCEPTED.includes(next.type)) {
       setError({ message: 'Unsupported file. Use a JPEG, PNG, WebP image or a PDF.' })
@@ -48,6 +53,8 @@ export default function UploadPage() {
 
   function clearFile() {
     setFile(null)
+    setScanned(false)
+    setScanMatch(null)
     if (preview) URL.revokeObjectURL(preview)
     setPreview(null)
     if (inputRef.current) inputRef.current.value = ''
@@ -57,6 +64,35 @@ export default function UploadPage() {
     event.preventDefault()
     setDragging(false)
     selectFile(event.dataTransfer.files?.[0])
+  }
+
+  async function handleScan() {
+    if (!file) return
+    setError(null)
+    setScanning(true)
+    const form = new FormData()
+    form.append('file', file)
+    try {
+      const res = await upload('/api/prescriptions/scan', form)
+      // Match name + age + gender against existing patients (pid first) and
+      // pre-fill the context from the stored record when one is found.
+      const info = res.extracted?.patient ?? {}
+      const match = res.matchedPatient
+      if (match) {
+        if (match.name) setContextName(match.name)
+        if (match.pid) setContextPid(match.pid)
+        if (match.phone) setContextPhone(match.phone)
+      } else {
+        if (info.name) setContextName(info.name)
+        if (info.pid) setContextPid(info.pid)
+      }
+      setScanMatch(match ?? null)
+      setScanned(true)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setScanning(false)
+    }
   }
 
   async function handleSubmit(event) {
@@ -74,11 +110,19 @@ export default function UploadPage() {
 
     try {
       const res = await upload('/api/prescriptions/upload', form)
-      // Auto-fill section 2 (patient context) from what the scan produced.
-      const scanned = res.extracted?.patient ?? {}
-      if (scanned.name) setContextName(scanned.name)
-      if (scanned.pid) setContextPid(scanned.pid)
-      if (scanned.phone) setContextPhone(scanned.phone)
+      // If an existing patient was found (by PID, else name + age + gender),
+      // pre-fill the context with that stored record; otherwise use the scan.
+      const info = res.extracted?.patient ?? {}
+      const match = res.matchedPatient
+      if (match) {
+        if (match.name) setContextName(match.name)
+        if (match.pid) setContextPid(match.pid)
+        if (match.phone) setContextPhone(match.phone)
+      } else {
+        if (info.name) setContextName(info.name)
+        if (info.pid) setContextPid(info.pid)
+        if (info.phone) setContextPhone(info.phone)
+      }
       setResult(res)
       setSubmitting(false)
     } catch (err) {
@@ -91,6 +135,9 @@ export default function UploadPage() {
     setResult(null)
     clearFile()
   }
+
+  // Prefer the matched DB record so the summary shows the existing patient's data.
+  const shownPatient = result?.matchedPatient ?? result?.extracted?.patient ?? {}
 
   return (
     <div className="page">
@@ -113,11 +160,11 @@ export default function UploadPage() {
           <div className={`folder-banner folder-banner--${result.matchedPatient ? 'existing' : 'new'}`}>
             <span className="folder-banner__icon"><FolderIcon size={30} /></span>
             <div className="folder-banner__body">
-              <strong>{result.extracted?.patient?.name || 'Unknown patient'}</strong>
+              <strong>{shownPatient.name || 'Unknown patient'}</strong>
               <div className="profile__tags">
-                <span className="tag">PID: {result.extracted?.patient?.pid || '—'}</span>
-                <span className="tag">Age: {result.extracted?.patient?.age || '—'}</span>
-                <span className="tag">Gender: {result.extracted?.patient?.gender || '—'}</span>
+                <span className="tag">PID: {shownPatient.pid || '—'}</span>
+                <span className="tag">Age: {shownPatient.age || '—'}</span>
+                <span className="tag">Gender: {shownPatient.gender || '—'}</span>
               </div>
             </div>
             <span className={`pill ${result.matchedPatient ? 'pill--ok' : 'pill--info'}`}>
@@ -191,6 +238,27 @@ export default function UploadPage() {
               </button>
             </div>
           )}
+
+          {file ? (
+            <div className="scan-actions">
+              <button type="button" className="btn btn--primary" onClick={handleScan} disabled={scanning}>
+                {scanning ? (
+                  <>
+                    <span className="spinner spinner--sm" aria-hidden="true" /> Scanning…
+                  </>
+                ) : scanned ? (
+                  'Re-scan document'
+                ) : (
+                  'Scan document'
+                )}
+              </button>
+              <span className="muted small">
+                {scanned
+                  ? 'Document padh liya — Name & PID neeche Patient context me auto-fill ho gaye.'
+                  : 'Scan karte hi document ka Name aur PID neeche auto-fill ho jayega.'}
+              </span>
+            </div>
+          ) : null}
         </section>
 
         <section className="card">
@@ -198,6 +266,19 @@ export default function UploadPage() {
           <p className="muted small">
             Hints help the AI when handwriting is unclear. You can review everything before saving.
           </p>
+
+          {scanMatch ? (
+            <div className="banner banner--info banner--inline">
+              <span>
+                Existing patient mila — <strong>{scanMatch.name}</strong>
+                {scanMatch.pid ? ` (PID ${scanMatch.pid})` : ''}. Uska stored data neeche auto-fill ho gaya.
+              </span>
+            </div>
+          ) : scanned ? (
+            <div className="banner banner--warn banner--inline">
+              Name + age + gender se koi existing patient nahi mila — naya folder banega.
+            </div>
+          ) : null}
           <div className="field-row">
             <label className="field">
               <span>Patient name</span>
@@ -220,16 +301,20 @@ export default function UploadPage() {
             </span>
           </label>
 
-          <button type="submit" className="btn btn--primary" disabled={!file || !consent || submitting}>
+          <button type="submit" className="btn btn--primary" disabled={!file || !consent || !scanned || submitting}>
             {submitting ? (
               <>
                 <span className="spinner spinner--sm" aria-hidden="true" /> Analysing…
               </>
             ) : (
-              'Upload & analyse'
+              'Save & analyse'
             )}
           </button>
-          {submitting ? <p className="muted small">This can take up to a minute while the AI reads the scan.</p> : null}
+          {!scanned ? (
+            <p className="muted small">Pehle upar “Scan document” dabayein, uske baad save karein.</p>
+          ) : submitting ? (
+            <p className="muted small">This can take up to a minute while the AI reads the scan.</p>
+          ) : null}
         </section>
       </form>
     </div>

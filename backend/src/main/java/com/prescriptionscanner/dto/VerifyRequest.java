@@ -18,7 +18,8 @@ public record VerifyRequest(
 		List<DiagnosisInput> diagnoses,
 		List<MedicineInput> medicines,
 		List<LabResultInput> labResults,
-		JsonNode rawAiJson) {
+		JsonNode rawAiJson,
+		JsonNode reviewedJson) {
 
 	public record PatientInput(
 			String pid,
