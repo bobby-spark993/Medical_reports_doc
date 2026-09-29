@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "properties": {
+    "documentType": {
+      "type": "string",
+      "enum": ["LAB_REPORT", "PRESCRIPTION", "OTHER"]
+    },
+    "patient": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "nullable": true },
+        "patientRefNo": { "type": "string", "nullable": true },
+        "pid": { "type": "string", "nullable": true },
+        "gender": { "type": "string", "nullable": true },
+        "age": { "type": "string", "nullable": true },
+        "dateOfBirth": { "type": "string", "nullable": true },
+        "address": { "type": "string", "nullable": true },
+        "maritalStatus": { "type": "string", "nullable": true }
+      },
+      "nullable": true
+    },
+    "labReport": {
+      "type": "object",
+      "properties": {
+        "labName": { "type": "string", "nullable": true },
+        "labReportId": { "type": "string", "nullable": true },
+        "documentDate": { "type": "string", "nullable": true },
+        "reportedDate": { "type": "string", "nullable": true },
+        "referredBy": { "type": "string", "nullable": true }
+      },
+      "nullable": true
+    },
+    "results": {
+      "type": "array",
+      "nullable": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "testGroup": { "type": "string", "nullable": true },
+          "testName": { "type": "string", "nullable": true },
+          "resultValue": { "type": "string", "nullable": true },
+          "unit": { "type": "string", "nullable": true },
+          "referenceRange": { "type": "string", "nullable": true },
+          "flag": { "type": "string", "enum": ["NORMAL", "LOW", "HIGH"], "nullable": true }
+        }
+      }
+    },
+    "prescription": {
+      "type": "object",
+      "properties": {
+        "doctorName": { "type": "string", "nullable": true },
+        "doctorQualification": { "type": "string", "nullable": true },
+        "clinicName": { "type": "string", "nullable": true },
+        "registrationNo": { "type": "string", "nullable": true },
+        "appointmentDate": { "type": "string", "nullable": true },
+        "appointmentNo": { "type": "string", "nullable": true },
+        "validUpTo": { "type": "string", "nullable": true },
+        "patientRegdValidUpTo": { "type": "string", "nullable": true },
+        "diagnosisOrComplaints": { "type": "string", "nullable": true },
+        "medicines": {
+          "type": "array",
+          "nullable": true,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "nullable": true },
+              "dose": { "type": "string", "nullable": true },
+              "frequency": { "type": "string", "nullable": true },
+              "duration": { "type": "string", "nullable": true },
+              "notes": { "type": "string", "nullable": true }
+            }
+          }
+        },
+        "advice": { "type": "string", "nullable": true },
+        "handwrittenRawText": { "type": "string", "nullable": true },
+        "confidence": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"], "nullable": true }
+      },
+      "nullable": true
+    }
+  },
+  "required": ["documentType"]
+}

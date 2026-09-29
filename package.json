@@ -1,0 +1,16 @@
+{
+  "name": "prescription-scanner",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Full-stack prescription scanner - Spring Boot backend + React frontend",
+  "scripts": {
+    "dev": "concurrently --names backend,frontend --prefix-colors cyan,magenta \"node scripts/run-backend.mjs\" \"pnpm --filter frontend run dev\"",
+    "dev:backend": "node scripts/run-backend.mjs",
+    "dev:frontend": "pnpm --filter frontend run dev",
+    "build": "pnpm --filter frontend run build",
+    "lint": "pnpm --filter frontend run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

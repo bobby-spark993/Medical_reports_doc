@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# Copy this file to application-local.properties and fill in real values.
+#
+#   cp application-local.properties.example application-local.properties
+#
+# application-local.properties is GITIGNORED. Never commit real secrets.
+# ---------------------------------------------------------------------------
+
+# Matches the postgres superuser on this machine.
+# Passed as a separate property, so "@" in the password is not a problem.
+spring.datasource.password=root@123
+
+# Free key from https://aistudio.google.com/apikey
+# New keys created in AI Studio are "auth keys" - which is what the API now requires.
+app.gemini.api-key=your_key_here
+
+# Long random string, e.g.:
+#   node -e "console.log(require('crypto').randomBytes(64).toString('base64url'))"
+app.jwt.secret=change_me
+
+# Optional overrides
+# app.ai.mask-pii=true
+# app.gemini.model=gemini-2.5-flash
+# app.seed.admin-password=Admin@12345

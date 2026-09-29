@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Secrets and generated files. NEVER commit any of these.
+# ---------------------------------------------------------------------------
+
+# Local Spring config containing real secrets
+backend/src/main/resources/application-local.properties
+**/application-*.properties
+!**/application-local.properties.example
+
+# Private patient scans (DPDP Act 2023: no patient data in git)
+storage/uploads/*
+!storage/uploads/.gitkeep
+backend/storage/
+
+# Build output
+backend/target/
+frontend/dist/
+frontend/node_modules/
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Frontend local env
+frontend/.env.local
+.env.local
+.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
