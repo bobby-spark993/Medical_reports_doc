@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prescriptionscanner.dto.DraftResponse;
+import com.prescriptionscanner.dto.PageScanResponse;
+import com.prescriptionscanner.dto.PageUploadResponse;
 import com.prescriptionscanner.dto.ScanDraftResponse;
 import com.prescriptionscanner.dto.UploadResponse;
 import com.prescriptionscanner.dto.VerifyRequest;
@@ -73,6 +75,40 @@ public class PrescriptionController {
 			HttpServletRequest http) {
 
 		return prescriptionService.scan(file, user.getId(), ClientIp.of(http));
+	}
+
+	/**
+	 * Page-wise scan-only: accepts one or more files (images and/or multi-page
+	 * PDFs), splits each into pages and extracts every page independently.
+	 * Nothing is persisted.
+	 */
+	@PostMapping(value = "/scan-pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public PageScanResponse scanPages(
+			@RequestParam("files") List<MultipartFile> files,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.scanPages(files, user.getId(), ClientIp.of(http));
+	}
+
+	/**
+	 * Page-wise save: stores one draft per page, all grouped under a batch id.
+	 * {@code isVerified} stays false until each page is reviewed.
+	 */
+	@PostMapping(value = "/upload-pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public PageUploadResponse uploadPages(
+			@RequestParam("files") List<MultipartFile> files,
+			@RequestParam(value = "consent", required = false) String consent,
+			@RequestParam(value = "contextName", required = false) String contextName,
+			@RequestParam(value = "contextPhone", required = false) String contextPhone,
+			@RequestParam(value = "contextPid", required = false) String contextPid,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.uploadPages(files, isTruthy(consent), contextName, contextPhone,
+				contextPid, user.getId(), ClientIp.of(http));
 	}
 
 	/** Draft/visit data for the review screen. */

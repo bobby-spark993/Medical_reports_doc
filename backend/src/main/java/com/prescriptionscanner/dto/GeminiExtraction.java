@@ -33,7 +33,10 @@ public record GeminiExtraction(
 		@JsonProperty("lab_results") List<LabResultInfo> labResults,
 		RadiologyInfo radiology,
 		@JsonProperty("handwriting_confidence") String handwritingConfidence,
+		@JsonProperty("handwritten_present") Boolean handwrittenPresent,
 		String notes,
+		@JsonProperty("abnormal_findings") List<String> abnormalFindings,
+		List<String> warnings,
 		@JsonProperty("uncertain_fields") List<String> uncertainFields) {
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -41,8 +44,14 @@ public record GeminiExtraction(
 			String name,
 			String address,
 			List<String> phone,
+			List<String> mobile,
 			String email,
-			String website) {
+			String website,
+			String note,
+			String timings,
+			@JsonProperty("closed_days") String closedDays,
+			List<String> services,
+			@JsonProperty("powered_by") String poweredBy) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -55,13 +64,16 @@ public record GeminiExtraction(
 			@JsonProperty("age_years") Integer ageYears,
 			@JsonProperty("marital_status") String maritalStatus,
 			String address,
-			@JsonProperty("pt_regd_valid_upto") String ptRegdValidUpto) {
+			@JsonProperty("pt_regd_valid_upto") String ptRegdValidUpto,
+			@JsonProperty("lab_id") String labId,
+			@JsonProperty("barcode_text") String barcodeText) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record DoctorInfo(
 			String name,
 			String qualification,
+			String experience,
 			@JsonProperty("registration_no") String registrationNo,
 			String designation) {
 	}
@@ -69,6 +81,7 @@ public record GeminiExtraction(
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record AppointmentInfo(
 			String date,
+			String time,
 			@JsonProperty("valid_upto") String validUpto,
 			@JsonProperty("appointment_no") String appointmentNo,
 			String mode) {
@@ -81,7 +94,8 @@ public record GeminiExtraction(
 			@JsonProperty("reported_on") String reportedOn,
 			@JsonProperty("report_date") String reportDate,
 			@JsonProperty("signed_by") String signedBy,
-			@JsonProperty("signed_by_designation") String signedByDesignation) {
+			@JsonProperty("signed_by_designation") String signedByDesignation,
+			String technician) {
 	}
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -113,11 +127,19 @@ public record GeminiExtraction(
 			String impression) {
 	}
 
+	/** A copy of this extraction with document_type replaced (used by the PID classifier). */
+	public GeminiExtraction withDocumentType(String type) {
+		return new GeminiExtraction(type, documentTitle, facility, patient, doctor, referredBy, appointment,
+				report, chiefComplaints, examination, diagnoses, medicines, investigationsAdvised, advice,
+				followUpDate, labResults, radiology, handwritingConfidence, handwrittenPresent, notes,
+				abnormalFindings, warnings, uncertainFields);
+	}
+
 	/** A completely empty extraction, used when stored JSON cannot be parsed. */
 	public static GeminiExtraction empty() {
 		return new GeminiExtraction(null, null, null, null, null, null, null, null,
 				List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null,
-				List.of(), null, null, null, List.of());
+				List.of(), null, null, null, null, List.of(), List.of(), List.of());
 	}
 
 	/** Replaces every null with an empty value so the UI never sees null. */
@@ -125,14 +147,16 @@ public record GeminiExtraction(
 		return new GeminiExtraction(
 				blankToNull(documentType),
 				blankToNull(documentTitle),
-				facility == null ? new Facility(null, null, List.of(), null, null) : facility,
+				facility == null
+						? new Facility(null, null, List.of(), List.of(), null, null, null, null, null, List.of(), null)
+						: facility,
 				patient == null
-						? new PatientInfo(null, null, null, null, null, null, null, null, null)
+						? new PatientInfo(null, null, null, null, null, null, null, null, null, null, null)
 						: patient,
-				doctor == null ? new DoctorInfo(null, null, null, null) : doctor,
+				doctor == null ? new DoctorInfo(null, null, null, null, null) : doctor,
 				blankToNull(referredBy),
-				appointment == null ? new AppointmentInfo(null, null, null, null) : appointment,
-				report == null ? new ReportInfo(null, null, null, null, null, null) : report,
+				appointment == null ? new AppointmentInfo(null, null, null, null, null) : appointment,
+				report == null ? new ReportInfo(null, null, null, null, null, null, null) : report,
 				chiefComplaints == null ? List.of() : chiefComplaints,
 				examination == null ? List.of() : examination,
 				diagnoses == null ? List.of() : diagnoses,
@@ -143,7 +167,10 @@ public record GeminiExtraction(
 				labResults == null ? List.of() : labResults,
 				radiology == null ? new RadiologyInfo(null, null, List.of(), null) : radiology,
 				blankToNull(handwritingConfidence),
+				handwrittenPresent,
 				blankToNull(notes),
+				abnormalFindings == null ? List.of() : abnormalFindings,
+				warnings == null ? List.of() : warnings,
 				uncertainFields == null ? List.of() : uncertainFields);
 	}
 

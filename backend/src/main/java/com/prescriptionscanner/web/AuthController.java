@@ -14,6 +14,7 @@ import com.prescriptionscanner.config.AppProperties;
 import com.prescriptionscanner.dto.AuthResponse;
 import com.prescriptionscanner.dto.LoginRequest;
 import com.prescriptionscanner.dto.OkResponse;
+import com.prescriptionscanner.dto.RegisterRequest;
 import com.prescriptionscanner.dto.UserDto;
 import com.prescriptionscanner.exception.ApiException;
 import com.prescriptionscanner.security.JwtAuthenticationFilter;
@@ -46,8 +47,18 @@ public class AuthController {
 	public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
 			HttpServletRequest http) {
 
-		AuthService.LoginResult result = authService.login(request, ClientIp.of(http));
+		return withSession(authService.login(request, ClientIp.of(http)));
+	}
 
+	/** Public self-registration: creates a staff account and signs the user in. */
+	@PostMapping("/register")
+	public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request,
+			HttpServletRequest http) {
+
+		return withSession(authService.register(request, ClientIp.of(http)));
+	}
+
+	private ResponseEntity<AuthResponse> withSession(AuthService.LoginResult result) {
 		ResponseCookie cookie = ResponseCookie.from(JwtAuthenticationFilter.COOKIE_NAME, result.token())
 				.httpOnly(true)
 				.secure(props.getJwt().isCookieSecure())

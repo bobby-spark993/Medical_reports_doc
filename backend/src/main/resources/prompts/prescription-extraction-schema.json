@@ -9,8 +9,14 @@
         "name": { "type": "STRING", "nullable": true },
         "address": { "type": "STRING", "nullable": true },
         "phone": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "mobile": { "type": "ARRAY", "items": { "type": "STRING" } },
         "email": { "type": "STRING", "nullable": true },
-        "website": { "type": "STRING", "nullable": true }
+        "website": { "type": "STRING", "nullable": true },
+        "note": { "type": "STRING", "nullable": true },
+        "timings": { "type": "STRING", "nullable": true },
+        "closed_days": { "type": "STRING", "nullable": true },
+        "services": { "type": "ARRAY", "items": { "type": "STRING" } },
+        "powered_by": { "type": "STRING", "nullable": true }
       }
     },
     "patient": {
@@ -24,7 +30,9 @@
         "age_years": { "type": "INTEGER", "nullable": true },
         "marital_status": { "type": "STRING", "nullable": true },
         "address": { "type": "STRING", "nullable": true },
-        "pt_regd_valid_upto": { "type": "STRING", "nullable": true }
+        "pt_regd_valid_upto": { "type": "STRING", "nullable": true },
+        "lab_id": { "type": "STRING", "nullable": true },
+        "barcode_text": { "type": "STRING", "nullable": true }
       }
     },
     "doctor": {
@@ -32,6 +40,7 @@
       "properties": {
         "name": { "type": "STRING", "nullable": true },
         "qualification": { "type": "STRING", "nullable": true },
+        "experience": { "type": "STRING", "nullable": true },
         "registration_no": { "type": "STRING", "nullable": true },
         "designation": { "type": "STRING", "nullable": true }
       }
@@ -41,6 +50,7 @@
       "type": "OBJECT", "nullable": true,
       "properties": {
         "date": { "type": "STRING", "nullable": true },
+        "time": { "type": "STRING", "nullable": true },
         "valid_upto": { "type": "STRING", "nullable": true },
         "appointment_no": { "type": "STRING", "nullable": true },
         "mode": { "type": "STRING", "nullable": true }
@@ -54,7 +64,8 @@
         "reported_on": { "type": "STRING", "nullable": true },
         "report_date": { "type": "STRING", "nullable": true },
         "signed_by": { "type": "STRING", "nullable": true },
-        "signed_by_designation": { "type": "STRING", "nullable": true }
+        "signed_by_designation": { "type": "STRING", "nullable": true },
+        "technician": { "type": "STRING", "nullable": true }
       }
     },
     "chief_complaints": { "type": "ARRAY", "items": { "type": "STRING" } },
@@ -104,7 +115,10 @@
       }
     },
     "handwriting_confidence": { "type": "STRING", "enum": ["LOW", "MEDIUM", "HIGH"], "nullable": true },
+    "handwritten_present": { "type": "BOOLEAN", "nullable": true },
     "notes": { "type": "STRING", "nullable": true },
+    "abnormal_findings": { "type": "ARRAY", "items": { "type": "STRING" } },
+    "warnings": { "type": "ARRAY", "items": { "type": "STRING" } },
     "uncertain_fields": { "type": "ARRAY", "items": { "type": "STRING" } }
   },
   "required": ["document_type", "patient", "uncertain_fields"]

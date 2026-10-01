@@ -35,6 +35,15 @@ export function AuthProvider({ children }) {
     return res.user
   }, [])
 
+  const register = useCallback(async (payload) => {
+    const res = await apiFetch('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    setUser(res.user)
+    return res.user
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' })
@@ -45,8 +54,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout],
+    () => ({ user, loading, login, register, logout }),
+    [user, loading, login, register, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

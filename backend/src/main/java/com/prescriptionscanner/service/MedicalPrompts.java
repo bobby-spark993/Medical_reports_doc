@@ -33,13 +33,16 @@ public final class MedicalPrompts {
 			   Observations and Impression, signed by a radiologist.
 			4. OTHER - anything else (discharge summary, certificate, etc.).
 
+			A page that prints a PID in the form "SNP" followed by 12 digits (e.g. SNP260404071826) is always a
+			PRESCRIPTION. A page with no such PID is a report (LAB_REPORT or RADIOLOGY_REPORT).
+
 			Return ONLY JSON matching the requested schema. Use null (or an empty array) for anything not present.
 			NEVER guess illegible handwriting. If a value is hard to read, still put your best reading in its
 			field AND add its exact path to uncertain_fields so a human can check it.
 			Do not invent diagnoses, medicines, or lab values that are not written on the document.
 			Copy values exactly as written; do not translate or reformat units or dates.
-			Ignore signatures, stamps, logos, barcodes, QR codes and legal footers such as
-			"Not valid for medico-legal purpose", except where a field below asks for them.
+			Ignore signatures, stamps, logos, barcodes and QR codes. Capture legal footers such as
+			"Not Valid For Medico Legal Purpose" in facility.note.
 			Put every handwritten item on the page into the "notes" field, one item per line with a short label,
 			even when it is also captured in a structured field.
 			""";
@@ -53,18 +56,20 @@ public final class MedicalPrompts {
 			{
 			  "document_type": "PRESCRIPTION" | "LAB_REPORT" | "RADIOLOGY_REPORT" | "OTHER",
 			  "document_title": string|null,
-			  "facility": { "name": string|null, "address": string|null, "phone": string[], "email": string|null, "website": string|null },
+			  "facility": { "name": string|null, "address": string|null, "phone": string[], "mobile": string[], "email": string|null, "website": string|null, "note": string|null,
+			                "timings": string|null, "closed_days": string|null, "services": string[], "powered_by": string|null },
 			  "patient": {
 			    "pid": string|null,
 			    "patient_ref_no": string|null,
 			    "name": string|null, "gender": string|null, "age": string|null, "age_years": integer|null,
-			    "marital_status": string|null, "address": string|null, "pt_regd_valid_upto": string|null
+			    "marital_status": string|null, "address": string|null, "pt_regd_valid_upto": string|null,
+			    "lab_id": string|null, "barcode_text": string|null
 			  },
-			  "doctor": { "name": string|null, "qualification": string|null, "registration_no": string|null, "designation": string|null },
+			  "doctor": { "name": string|null, "qualification": string|null, "experience": string|null, "registration_no": string|null, "designation": string|null },
 			  "referred_by": string|null,
-			  "appointment": { "date": string|null, "valid_upto": string|null, "appointment_no": string|null, "mode": string|null },
+			  "appointment": { "date": string|null, "time": string|null, "valid_upto": string|null, "appointment_no": string|null, "mode": string|null },
 			  "report": { "report_id": string|null, "received_on": string|null, "reported_on": string|null, "report_date": string|null,
-			              "signed_by": string|null, "signed_by_designation": string|null },
+			              "signed_by": string|null, "signed_by_designation": string|null, "technician": string|null },
 			  "chief_complaints": string[],
 			  "examination": string[],
 			  "diagnoses": string[],
@@ -76,7 +81,10 @@ public final class MedicalPrompts {
 			                     "reference_range": string|null, "flag": "L"|"H"|null, "abnormal": boolean, "remark": string|null } ],
 			  "radiology": { "examination": string|null, "protocol": string|null, "observations": string[], "impression": string|null },
 			  "handwriting_confidence": "LOW" | "MEDIUM" | "HIGH" | null,
+			  "handwritten_present": boolean|null,
 			  "notes": string|null,
+			  "abnormal_findings": string[],
+			  "warnings": string[],
 			  "uncertain_fields": string[]
 			}
 
@@ -89,6 +97,11 @@ public final class MedicalPrompts {
 			  the page is ever the PID: not the barcode number, not a registration / appointment / report / ref
 			  number, and not the trailing digits after a name. If there is no "PID:" label, use null.
 			- Fill only the sections that belong to the page type; leave the others null / empty.
+			- A PID printed as "SNP" + 12 digits means the page is a PRESCRIPTION; a page without that PID is a
+			  report. Set document_type accordingly.
+			- Copy text exactly as printed, including spelling and number formats; never correct or guess.
+			- If a printed value is present but illegible, put the literal "UNREADABLE" in its field and add
+			  its path to uncertain_fields. If a field is absent, use null (or an empty array); never invent it.
 
 			Rules for PRESCRIPTION pages (this page is the MASTER record, extract every field):
 			- "patient.pid" is ONLY the value printed immediately after the literal label "PID:" (e.g.
@@ -99,12 +112,16 @@ public final class MedicalPrompts {
 			- Always capture patient.name, patient.gender and patient.age (or patient.age_years) on a
 			  prescription: these identify the patient folder. If a value is truly unreadable, still put
 			  your best reading and add its path to uncertain_fields.
-			- appointment.date = "Appt. Date", appointment.valid_upto = "Valid Up To", appointment.appointment_no =
+			- appointment.date = "Appt. Date", appointment.time = the appointment time if one is printed,
+			  appointment.valid_upto = "Valid Up To", appointment.appointment_no =
 			  the circled number, appointment.mode = the bracketed word (OFFLINE / ONLINE).
 			- doctor = the letterhead doctor (name, qualification such as M.B.B.S., D.P.M., FIPS, MIEA,
-			  registration number, designation such as Consultant Neuropsychiatrist).
-			- facility = the clinic name, address, phones, email and website on the letterhead (prefer the English
-			  text if both languages are printed; otherwise copy the Hindi as written).
+			  experience such as "Ex-Senior Resident (C.I.P. Kanke, Ranchi)", registration number,
+			  designation such as Consultant Neuropsychiatrist).
+			- facility = the clinic name, address, phones, mobiles, email, website and any legal note on the
+			  letterhead (prefer the English text if both languages are printed; otherwise copy the Hindi as
+			  written). Put landline numbers in facility.phone and mobile numbers in facility.mobile; a footer
+			  such as "Not Valid For Medico Legal Purpose" goes to facility.note.
 			- HANDWRITING: read every handwritten line. Put the complete transcription in "notes", one item per
 			  line, in the original language and order, with labels such as "C/O:", "O/E:", "Dx:", "Rx:",
 			  "Advice:", "Follow-up:" when the doctor groups it that way. "C/O" or "C/o" means complaints and goes to
@@ -116,23 +133,38 @@ public final class MedicalPrompts {
 			- Set handwriting_confidence to LOW if most of the handwriting is unclear, MEDIUM if partly clear,
 			  HIGH if clearly legible. Use null if nothing is handwritten.
 
-			Rules for LAB_REPORT pages:
+			Rules for LAB_REPORT pages (extract only the PRINTED fields; do not interpret handwriting):
+			- Set handwritten_present = true if there is any handwritten mark on the page, otherwise false.
 			- The name line looks like "SUSHILA DEVI 071824". Put only the name in patient.name and the trailing
 			  number in patient.patient_ref_no (this number is the last 6 digits of the prescription PID).
 			  Set patient.pid to null unless a value is printed after a literal "PID:" label.
-			- The line "<LAB NAME> ID : 20260404046" goes to report.report_id. "Received on" goes to
-			  report.received_on, "Reported on" to report.reported_on. "Refd. by" goes to referred_by.
-			- report.signed_by = the pathologist (e.g. "Dr. ZAARA NASEEM"), signed_by_designation =
-			  "M.D. PATHOLOGIST, Consultant Pathologist".
-			- One entry in lab_results per printed test row. "group" is the underlined heading above it
-			  (e.g. "Complete Blood Count", "D.C. of W.B.C.", "R.B.C. Indices", "Platelets Indices"); use null
-			  for tests without a heading (e.g. "Blood Sugar (Random)", "E.S.R. First hr.").
+			- patient.lab_id = the lab / sample / report ID printed for this report (e.g. "20260404046").
+			  patient.barcode_text = the human-readable text printed under or beside a barcode / QR code, if legible.
+			- report.report_id = the lab report number printed on the page. "Received on" goes to
+			  report.received_on, "Reported on" to report.reported_on, any report date to report.report_date.
+			  "Refd. by" goes to referred_by.
+			- report.signed_by = the pathologist (e.g. "Dr. ZAARA NASEEM"), report.signed_by_designation =
+			  "M.D. PATHOLOGIST, Consultant Pathologist", report.technician = the lab technician name or
+			  signature if printed.
+			- facility = the lab name, address, phones/mobiles, email, website. facility.note holds disclaimers
+			  and footer text such as "Not Valid For Medico Legal Purposes", facility.timings holds any
+			  visiting / sample-collection hours, facility.closed_days holds weekly-off / closed days,
+			  facility.services lists the tests or services offered, facility.powered_by holds any
+			  "Powered by ..." / software text.
+			- One entry in lab_results per printed test row. "group" is the underlined section heading above it
+			  (e.g. "Complete Blood Count", "D.C. of W.B.C.", "R.B.C. Indices", "Platelet Indices"); use null
+			  for tests without a heading (e.g. "Blood Sugar (Random)", "E.S.R. First hr."). Keep every heading.
 			- "value", "unit" and "reference_range" are copied exactly as printed (e.g. "14.6 gm/dl = 100%",
 			  "< 20 mm", "0.108 - 0.282"). Extra text under a value, such as "(72%)" below haemoglobin, goes
 			  to "remark".
 			- "flag" is "L" or "H" only when (L) or (H) is printed beside the result; then "abnormal" is true.
 			  Never compute the flag yourself by comparing with the reference range.
+			- abnormal_findings: one short line per result that is out of range or marked (L)/(H),
+			  e.g. "Haemoglobin 9.2 gm/dl (L)". Leave empty when every result is normal.
+			- warnings: flag any printed problem a human should check, such as a patient name/age/ID that does
+			  not match across the page. Leave empty when there is nothing to warn about.
 			- document_title = the panel name if there is one (e.g. "Complete Blood Count"), else the test name.
+			- Do not output a diagnosis, treatment advice or medicine suggestion.
 
 			Rules for RADIOLOGY_REPORT pages:
 			- patient.name, gender ("Sex"), age come from the header; there is usually NO PID and NO ref number,

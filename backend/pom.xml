@@ -30,6 +30,7 @@
 		<java.version>21</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<openpdf.version>3.0.5</openpdf.version>
+		<pdfbox.version>3.0.3</pdfbox.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -79,6 +80,13 @@
 			<groupId>com.github.librepdf</groupId>
 			<artifactId>openpdf</artifactId>
 			<version>${openpdf.version}</version>
+		</dependency>
+
+		<!-- Rasterise each page of an uploaded PDF so it can be scanned page-wise -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>${pdfbox.version}</version>
 		</dependency>
 
 		<dependency>

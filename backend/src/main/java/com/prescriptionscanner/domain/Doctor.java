@@ -22,6 +22,9 @@ public class Doctor extends BaseEntity {
 	@Column(length = 160)
 	private String qualification;
 
+	@Column(length = 200)
+	private String experience;
+
 	@Column(name = "registration_no", length = 80)
 	private String registrationNo;
 
@@ -41,6 +44,8 @@ public class Doctor extends BaseEntity {
 	public void setName(String name) { this.name = name; }
 	public String getQualification() { return qualification; }
 	public void setQualification(String qualification) { this.qualification = qualification; }
+	public String getExperience() { return experience; }
+	public void setExperience(String experience) { this.experience = experience; }
 	public String getRegistrationNo() { return registrationNo; }
 	public void setRegistrationNo(String registrationNo) { this.registrationNo = registrationNo; }
 	public String getDesignation() { return designation; }

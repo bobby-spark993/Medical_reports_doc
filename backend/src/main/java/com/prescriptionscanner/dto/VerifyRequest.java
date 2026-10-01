@@ -35,6 +35,7 @@ public record VerifyRequest(
 	public record DoctorInput(
 			String name,
 			String qualification,
+			String experience,
 			String registrationNo,
 			String designation,
 			String clinic) {

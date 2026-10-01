@@ -68,6 +68,18 @@ public class Visit extends BaseEntity {
 	@Column(name = "scan_file_path", length = 400)
 	private String scanFilePath;
 
+	/** Groups the drafts created from one page-wise upload; null for single-file scans. */
+	@Column(name = "batch_id", length = 36)
+	private String batchId;
+
+	/** 1-based page number of this draft within its source document. */
+	@Column(name = "page_no")
+	private Integer pageNo;
+
+	/** Total pages produced by the source document (1 for a single image). */
+	@Column(name = "page_count")
+	private Integer pageCount;
+
 	/** The raw Gemini response, kept for the audit trail. */
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(name = "raw_ai_json", columnDefinition = "jsonb")
@@ -113,6 +125,12 @@ public class Visit extends BaseEntity {
 	public void setNotes(String notes) { this.notes = notes; }
 	public String getScanFilePath() { return scanFilePath; }
 	public void setScanFilePath(String scanFilePath) { this.scanFilePath = scanFilePath; }
+	public String getBatchId() { return batchId; }
+	public void setBatchId(String batchId) { this.batchId = batchId; }
+	public Integer getPageNo() { return pageNo; }
+	public void setPageNo(Integer pageNo) { this.pageNo = pageNo; }
+	public Integer getPageCount() { return pageCount; }
+	public void setPageCount(Integer pageCount) { this.pageCount = pageCount; }
 	public String getRawAiJson() { return rawAiJson; }
 	public void setRawAiJson(String rawAiJson) { this.rawAiJson = rawAiJson; }
 	public String getReviewedJson() { return reviewedJson; }

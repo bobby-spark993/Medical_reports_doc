@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { API_BASE, get, post } from '../lib/api'
 import { buildForm, buildVerifyRequest } from '../lib/extraction'
-import { formatDateTime } from '../lib/format'
+import { formatDateTime, toDateInputValue } from '../lib/format'
 import ErrorBanner from '../components/ErrorBanner'
 import Loading from '../components/Loading'
 import FolderIcon from '../components/FolderIcon'
@@ -13,6 +13,35 @@ function Field({ label, wide = false, ...props }) {
       <span>{label}</span>
       <input {...props} />
     </label>
+  )
+}
+
+// Only renders fields that actually came back in the extracted JSON.
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function MetaRow({ label, value }) {
+  if (!hasValue(value)) return null
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  )
+}
+
+function MetaBlock({ title, rows }) {
+  if (!rows.some(([, value]) => hasValue(value))) return null
+  return (
+    <div className="block">
+      <h4>{title}</h4>
+      <dl className="meta meta--stacked">
+        {rows.map(([label, value]) => (
+          <MetaRow key={label} label={label} value={value} />
+        ))}
+      </dl>
+    </div>
   )
 }
 
@@ -89,9 +118,24 @@ export default function ReviewPage() {
     }
   }, [id])
 
-  const uncertain = draft?.extracted?.uncertainFields ?? []
-
   const scanUrl = useMemo(() => `${API_BASE}/api/files/${id}`, [id])
+
+  // Pages saved together by one page-wise upload, so we can page through them.
+  const batch = useMemo(() => {
+    const batchId = draft?.visit?.batchId
+    if (!batchId) return null
+    try {
+      const raw = sessionStorage.getItem(`rx_batch_${batchId}`)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  }, [draft])
+
+  const batchPages = batch?.pages ?? []
+  const batchIndex = batchPages.findIndex((page) => page.id === draft?.visit?.id)
+  const prevPage = batchIndex > 0 ? batchPages[batchIndex - 1] : null
+  const nextPage = batchIndex >= 0 && batchIndex < batchPages.length - 1 ? batchPages[batchIndex + 1] : null
 
   // The exact JSON saved on the visit; fall back to the parsed extraction.
   const rawJsonText = useMemo(() => {
@@ -197,6 +241,24 @@ export default function ReviewPage() {
 
       <ErrorBanner error={error} />
 
+      {(batchPages.length > 1 || (visit?.pageCount ?? 1) > 1) ? (
+        <div className="banner banner--info banner--inline page-nav">
+          <span>
+            Page {visit?.pageNo ?? 1}
+            {visit?.pageCount ? ` of ${visit.pageCount}` : ''}
+            {nextPage ? ` · next: ${nextPage.documentType === 'PRESCRIPTION' ? 'Prescription' : 'Report'}` : ''}
+          </span>
+          <span className="page-nav__actions">
+            {prevPage ? (
+              <Link to={`/review/${prevPage.id}`} className="btn btn--ghost btn--sm">← Previous page</Link>
+            ) : null}
+            {nextPage ? (
+              <Link to={`/review/${nextPage.id}`} className="btn btn--ghost btn--sm">Next page →</Link>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
+
       {verified ? (
         <div className="banner banner--info">
           This prescription has already been verified.{' '}
@@ -204,23 +266,10 @@ export default function ReviewPage() {
         </div>
       ) : null}
 
-      {uncertain.length ? (
-        <div className="banner banner--warn">
-          <div>
-            <strong>The AI was unsure about:</strong>
-            <ul className="banner__issues">
-              {uncertain.map((field) => (
-                <li key={field}>{field}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
-
       {/* Read-only, clean preview of everything the scan produced. */}
       <section className="card">
         <div className="card__head">
-          <h2 className="card__title">Preview — scan se nikla data</h2>
+          <h2 className="card__title">Preview — extracted from scan</h2>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowJson((v) => !v)}>
             {showJson ? 'Hide JSON' : 'Show JSON'}
           </button>
@@ -236,24 +285,25 @@ export default function ReviewPage() {
                 {draft.matchedPatient.pidShort ? <span className="tag">Ref: {draft.matchedPatient.pidShort}</span> : null}
               </div>
             </div>
-            <Link to={`/patients/${draft.matchedPatient.id}`} className="btn btn--ghost btn--sm">Folder kholo</Link>
+            <Link to={`/patients/${draft.matchedPatient.id}`} className="btn btn--ghost btn--sm">Open folder</Link>
           </div>
         ) : (
           <div className="folder-banner folder-banner--new">
             <span className="folder-banner__icon"><FolderIcon size={30} /></span>
             <div className="folder-banner__body">
-              <strong>New patient folder banega</strong>
-              <div className="muted small">DB me name + age + gender se koi match nahi mila.</div>
+              <strong>New patient folder will be created</strong>
+              <div className="muted small">No existing patient matched by name, age and gender.</div>
             </div>
             <span className="pill pill--info">New folder</span>
           </div>
         )}
 
-        {form.documentType || form.handwritingConfidence ? (
+        {form.documentType || form.handwritingConfidence || form.handwrittenPresent ? (
           <div className="profile__tags">
             {form.documentType ? <span className="tag">Type: {form.documentType}</span> : null}
             {form.documentTitle ? <span className="tag">{form.documentTitle}</span> : null}
             {form.handwritingConfidence ? <span className="tag">Handwriting: {form.handwritingConfidence}</span> : null}
+            {form.handwrittenPresent ? <span className="tag">Handwritten: {form.handwrittenPresent}</span> : null}
           </div>
         ) : null}
 
@@ -264,47 +314,96 @@ export default function ReviewPage() {
           <div className="profile__info">
             <strong className="profile__name">{form.patient.name || 'Unknown patient'}</strong>
             <div className="profile__tags">
-              <span className="tag">PID: {form.patient.pid || '—'}</span>
-              {form.patient.patientRefNo ? <span className="tag">Ref: {form.patient.patientRefNo}</span> : null}
-              <span className="tag">Age: {form.patient.age || '—'}</span>
-              <span className="tag">Gender: {form.patient.gender || '—'}</span>
-              {form.patient.maritalStatus ? <span className="tag">{form.patient.maritalStatus}</span> : null}
+              {hasValue(form.patient.pid) ? <span className="tag">PID: {form.patient.pid}</span> : null}
+              {hasValue(form.patient.patientRefNo) ? <span className="tag">Ref: {form.patient.patientRefNo}</span> : null}
+              {hasValue(form.patient.age) ? <span className="tag">Age: {form.patient.age}</span> : null}
+              {hasValue(form.patient.gender) ? <span className="tag">Gender: {form.patient.gender}</span> : null}
+              {hasValue(form.patient.maritalStatus) ? <span className="tag">{form.patient.maritalStatus}</span> : null}
+              {hasValue(form.patient.labId) ? <span className="tag">Lab ID: {form.patient.labId}</span> : null}
+              {hasValue(form.patient.barcodeText) ? <span className="tag">Barcode: {form.patient.barcodeText}</span> : null}
             </div>
-            {form.patient.address ? <p className="muted small">{form.patient.address}</p> : null}
+            {hasValue(form.patient.address) ? <p className="muted small">{form.patient.address}</p> : null}
+            {hasValue(form.patient.ptRegdValidUpto) ? (
+              <p className="muted small">Pt. Regd. valid up to: {form.patient.ptRegdValidUpto}</p>
+            ) : null}
           </div>
         </div>
 
         <div className="grid grid--detail">
-          <div className="block">
-            <h4>Doctor &amp; facility</h4>
-            <dl className="meta meta--stacked">
-              <div><dt>Doctor</dt><dd>{form.doctor.name || '—'}</dd></div>
-              <div><dt>Qualification</dt><dd>{form.doctor.qualification || '—'}</dd></div>
-              <div><dt>Registration no.</dt><dd>{form.doctor.registrationNo || '—'}</dd></div>
-              <div><dt>Facility</dt><dd>{form.facility.name || '—'}</dd></div>
-              <div><dt>Referred by</dt><dd>{form.referredBy || '—'}</dd></div>
-            </dl>
-          </div>
-          <div className="block">
-            <h4>Visit</h4>
-            <dl className="meta meta--stacked">
-              <div><dt>Date</dt><dd>{form.visit.visitDate || '—'}</dd></div>
-              <div><dt>Valid up to</dt><dd>{form.visit.validUpTo || '—'}</dd></div>
-              <div><dt>Appointment no.</dt><dd>{form.visit.appointmentNo || '—'}</dd></div>
-              <div><dt>Follow-up</dt><dd>{form.visit.followUpDate || '—'}</dd></div>
-            </dl>
-          </div>
+          <MetaBlock
+            title="Clinic details"
+            rows={[
+              ['Name', form.facility.name],
+              ['Address', form.facility.address],
+              ['Phone', form.facility.phone],
+              ['Mobile', form.facility.mobile],
+              ['Email', form.facility.email],
+              ['Website', form.facility.website],
+              ['Timings', form.facility.timings],
+              ['Closed days', form.facility.closedDays],
+              ['Services', form.facility.services],
+              ['Powered by', form.facility.poweredBy],
+              ['Note', form.facility.note],
+            ]}
+          />
+          <MetaBlock
+            title="Doctor details"
+            rows={[
+              ['Doctor', form.doctor.name],
+              ['Qualification', form.doctor.qualification],
+              ['Experience', form.doctor.experience],
+              ['Registration no.', form.doctor.registrationNo],
+              ['Designation', form.doctor.designation],
+              ['Referred by', form.referredBy],
+            ]}
+          />
         </div>
 
-        {form.report.reportId || form.report.signedBy || form.report.reportedOn ? (
+        <MetaBlock
+          title="Visit"
+          rows={[
+            ['Date', form.visit.visitDate],
+            ['Time', form.visit.visitTime],
+            ['Valid up to', form.visit.validUpTo],
+            ['Appointment no.', form.visit.appointmentNo],
+            ['Mode', form.visit.mode],
+            ['Follow-up', form.visit.followUpDate],
+          ]}
+        />
+
+        <MetaBlock
+          title="Report"
+          rows={[
+            ['Report ID', form.report.reportId],
+            ['Received on', form.report.receivedOn],
+            ['Reported on', form.report.reportedOn],
+            ['Report date', form.report.reportDate],
+            ['Signed by', [form.report.signedBy, form.report.signedByDesignation].filter(Boolean).join(' — ')],
+            ['Technician', form.report.technician],
+          ]}
+        />
+
+        {form.abnormalFindings.length ? (
           <div className="block">
-            <h4>Report</h4>
-            <dl className="meta meta--stacked">
-              <div><dt>Report ID</dt><dd>{form.report.reportId || '—'}</dd></div>
-              <div><dt>Received on</dt><dd>{form.report.receivedOn || '—'}</dd></div>
-              <div><dt>Reported on</dt><dd>{form.report.reportedOn || '—'}</dd></div>
-              <div><dt>Signed by</dt><dd>{[form.report.signedBy, form.report.signedByDesignation].filter(Boolean).join(' — ') || '—'}</dd></div>
-            </dl>
+            <h4>Abnormal findings</h4>
+            <ul className="banner__issues">
+              {form.abnormalFindings.map((value, index) => (
+                <li key={`preview-abn-${index}`}>{value}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {form.warnings.length ? (
+          <div className="banner banner--warn">
+            <div>
+              <strong>Warnings</strong>
+              <ul className="banner__issues">
+                {form.warnings.map((value, index) => (
+                  <li key={`preview-warn-${index}`}>{value}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         ) : null}
 
@@ -429,37 +528,13 @@ export default function ReviewPage() {
 
         {showJson ? (
           <div className="block">
-            <h4>Raw JSON <span className="muted small">(isi roop mein DB me save hua)</span></h4>
+            <h4>Raw JSON <span className="muted small">(as saved to the database)</span></h4>
             <pre className="json-preview">{rawJsonText}</pre>
           </div>
         ) : null}
       </section>
 
-      <div className="grid grid--review">
-        <section className="card card--scan">
-          <h2 className="card__title">Original scan</h2>
-          {visit?.hasScan ? (
-            <>
-              {!imgError ? (
-                <img
-                  src={scanUrl}
-                  alt="Prescription scan"
-                  className="scan-preview"
-                  onError={() => setImgError(true)}
-                />
-              ) : (
-                <p className="muted">Preview unavailable for this file type.</p>
-              )}
-              <a className="btn btn--ghost btn--sm" href={scanUrl} target="_blank" rel="noreferrer">
-                Open original in new tab
-              </a>
-            </>
-          ) : (
-            <p className="muted">No scan stored for this draft.</p>
-          )}
-        </section>
-
-        <div className="review-form">
+      <div className="review-form">
           <section className="card">
             <h2 className="card__title">Patient</h2>
             <div className="field-row">
@@ -471,6 +546,8 @@ export default function ReviewPage() {
               <Field label="Age (years)" type="number" value={form.patient.ageYears} onChange={(e) => patch('patient', 'ageYears', e.target.value)} disabled={verified} />
               <Field label="Marital status" value={form.patient.maritalStatus} onChange={(e) => patch('patient', 'maritalStatus', e.target.value)} disabled={verified} />
               <Field label="Pt. Regd. valid up to" value={form.patient.ptRegdValidUpto} onChange={(e) => patch('patient', 'ptRegdValidUpto', e.target.value)} disabled={verified} />
+              <Field label="Lab ID" value={form.patient.labId} onChange={(e) => patch('patient', 'labId', e.target.value)} disabled={verified} />
+              <Field label="Barcode text" value={form.patient.barcodeText} onChange={(e) => patch('patient', 'barcodeText', e.target.value)} disabled={verified} />
               <Field label="Phone" value={form.patient.phone} onChange={(e) => patch('patient', 'phone', e.target.value)} disabled={verified} />
             </div>
             <Field label="Address" wide value={form.patient.address} onChange={(e) => patch('patient', 'address', e.target.value)} disabled={verified} />
@@ -482,10 +559,16 @@ export default function ReviewPage() {
             <div className="field-row">
               <Field label="Name" value={form.facility.name} onChange={(e) => patch('facility', 'name', e.target.value)} disabled={verified} />
               <Field label="Phone (comma separated)" value={form.facility.phone} onChange={(e) => patch('facility', 'phone', e.target.value)} disabled={verified} />
+              <Field label="Mobile (comma separated)" value={form.facility.mobile} onChange={(e) => patch('facility', 'mobile', e.target.value)} disabled={verified} />
               <Field label="Email" value={form.facility.email} onChange={(e) => patch('facility', 'email', e.target.value)} disabled={verified} />
               <Field label="Website" value={form.facility.website} onChange={(e) => patch('facility', 'website', e.target.value)} disabled={verified} />
+              <Field label="Timings" value={form.facility.timings} onChange={(e) => patch('facility', 'timings', e.target.value)} disabled={verified} />
+              <Field label="Closed days" value={form.facility.closedDays} onChange={(e) => patch('facility', 'closedDays', e.target.value)} disabled={verified} />
+              <Field label="Services (comma separated)" value={form.facility.services} onChange={(e) => patch('facility', 'services', e.target.value)} disabled={verified} />
+              <Field label="Powered by" value={form.facility.poweredBy} onChange={(e) => patch('facility', 'poweredBy', e.target.value)} disabled={verified} />
             </div>
             <Field label="Address" wide value={form.facility.address} onChange={(e) => patch('facility', 'address', e.target.value)} disabled={verified} />
+            <Field label="Note" wide value={form.facility.note} onChange={(e) => patch('facility', 'note', e.target.value)} disabled={verified} />
           </section>
 
           <section className="card">
@@ -493,6 +576,7 @@ export default function ReviewPage() {
             <div className="field-row">
               <Field label="Doctor name" value={form.doctor.name} onChange={(e) => patch('doctor', 'name', e.target.value)} disabled={verified} />
               <Field label="Qualification" value={form.doctor.qualification} onChange={(e) => patch('doctor', 'qualification', e.target.value)} disabled={verified} />
+              <Field label="Experience" value={form.doctor.experience} onChange={(e) => patch('doctor', 'experience', e.target.value)} disabled={verified} />
               <Field label="Registration no." value={form.doctor.registrationNo} onChange={(e) => patch('doctor', 'registrationNo', e.target.value)} disabled={verified} />
               <Field label="Designation" value={form.doctor.designation} onChange={(e) => patch('doctor', 'designation', e.target.value)} disabled={verified} />
               <Field label="Referred by" value={form.referredBy} onChange={(e) => patchTop('referredBy', e.target.value)} disabled={verified} />
@@ -502,12 +586,12 @@ export default function ReviewPage() {
           <section className="card">
             <h2 className="card__title">Visit</h2>
             <div className="field-row">
-              <Field label="Visit date" type="date" value={form.visit.visitDate} onChange={(e) => patch('visit', 'visitDate', e.target.value)} disabled={verified} />
+              <Field label="Visit date" type="date" value={toDateInputValue(form.visit.visitDate)} onChange={(e) => patch('visit', 'visitDate', e.target.value)} disabled={verified} />
               <Field label="Time" value={form.visit.visitTime} onChange={(e) => patch('visit', 'visitTime', e.target.value)} disabled={verified} placeholder="e.g. 10:30 AM" />
-              <Field label="Valid up to" type="date" value={form.visit.validUpTo} onChange={(e) => patch('visit', 'validUpTo', e.target.value)} disabled={verified} />
+              <Field label="Valid up to" type="date" value={toDateInputValue(form.visit.validUpTo)} onChange={(e) => patch('visit', 'validUpTo', e.target.value)} disabled={verified} />
               <Field label="Appointment no." value={form.visit.appointmentNo} onChange={(e) => patch('visit', 'appointmentNo', e.target.value)} disabled={verified} />
               <Field label="Mode" value={form.visit.mode} onChange={(e) => patch('visit', 'mode', e.target.value)} disabled={verified} />
-              <Field label="Follow-up date" type="date" value={form.visit.followUpDate} onChange={(e) => patch('visit', 'followUpDate', e.target.value)} disabled={verified} />
+              <Field label="Follow-up date" type="date" value={toDateInputValue(form.visit.followUpDate)} onChange={(e) => patch('visit', 'followUpDate', e.target.value)} disabled={verified} />
             </div>
             <label className="field field--wide">
               <span>Notes (handwriting)</span>
@@ -524,6 +608,7 @@ export default function ReviewPage() {
               <Field label="Report date" value={form.report.reportDate} onChange={(e) => patch('report', 'reportDate', e.target.value)} disabled={verified} />
               <Field label="Signed by" value={form.report.signedBy} onChange={(e) => patch('report', 'signedBy', e.target.value)} disabled={verified} />
               <Field label="Signed by designation" value={form.report.signedByDesignation} onChange={(e) => patch('report', 'signedByDesignation', e.target.value)} disabled={verified} />
+              <Field label="Technician" value={form.report.technician} onChange={(e) => patch('report', 'technician', e.target.value)} disabled={verified} />
             </div>
           </section>
 
@@ -694,12 +779,40 @@ export default function ReviewPage() {
             </label>
           </section>
 
+          <ListEditor
+            title="Abnormal findings"
+            items={form.abnormalFindings}
+            verified={verified}
+            onPatch={(i, v) => patchStringList('abnormalFindings', i, v)}
+            onAdd={() => addToList('abnormalFindings', '')}
+            onRemove={(i) => removeFromList('abnormalFindings', i)}
+            placeholder="e.g. Haemoglobin 9.2 gm/dl (L)"
+          />
+
+          <ListEditor
+            title="Warnings"
+            items={form.warnings}
+            verified={verified}
+            onPatch={(i, v) => patchStringList('warnings', i, v)}
+            onAdd={() => addToList('warnings', '')}
+            onRemove={(i) => removeFromList('warnings', i)}
+            placeholder="e.g. Name on report does not match patient"
+          />
+
           <section className="card">
             <h2 className="card__title">Document</h2>
             <div className="field-row">
               <Field label="Document type" value={form.documentType} onChange={(e) => patchTop('documentType', e.target.value)} disabled={verified} placeholder="PRESCRIPTION / LAB_REPORT / RADIOLOGY_REPORT / OTHER" />
               <Field label="Document title" value={form.documentTitle} onChange={(e) => patchTop('documentTitle', e.target.value)} disabled={verified} />
               <Field label="Handwriting confidence" value={form.handwritingConfidence} onChange={(e) => patchTop('handwritingConfidence', e.target.value)} disabled={verified} placeholder="LOW / MEDIUM / HIGH" />
+              <label className="field">
+                <span>Handwritten present</span>
+                <select value={form.handwrittenPresent} onChange={(e) => patchTop('handwrittenPresent', e.target.value)} disabled={verified}>
+                  <option value="">—</option>
+                  <option value="YES">Yes</option>
+                  <option value="NO">No</option>
+                </select>
+              </label>
             </div>
           </section>
 
@@ -724,7 +837,29 @@ export default function ReviewPage() {
             </div>
           ) : null}
         </div>
-      </div>
+
+      <section className="card">
+        <h2 className="card__title">Original scan</h2>
+        {visit?.hasScan ? (
+          <>
+            {!imgError ? (
+              <img
+                src={scanUrl}
+                alt="Prescription scan"
+                className="scan-preview"
+                onError={() => setImgError(true)}
+              />
+            ) : (
+              <p className="muted">Preview unavailable for this file type.</p>
+            )}
+            <a className="btn btn--ghost btn--sm" href={scanUrl} target="_blank" rel="noreferrer">
+              Open original in new tab
+            </a>
+          </>
+        ) : (
+          <p className="muted">No scan stored for this draft.</p>
+        )}
+      </section>
     </div>
   )
 }

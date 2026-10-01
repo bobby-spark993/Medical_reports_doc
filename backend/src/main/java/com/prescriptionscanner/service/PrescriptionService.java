@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -28,6 +29,8 @@ import com.prescriptionscanner.domain.PrescribedMedicine;
 import com.prescriptionscanner.domain.Visit;
 import com.prescriptionscanner.dto.ApiError;
 import com.prescriptionscanner.dto.GeminiExtraction;
+import com.prescriptionscanner.dto.PageScanResponse;
+import com.prescriptionscanner.dto.PageUploadResponse;
 import com.prescriptionscanner.dto.PatientSummaryDto;
 import com.prescriptionscanner.dto.ScanDraftResponse;
 import com.prescriptionscanner.dto.UploadResponse;
@@ -45,6 +48,9 @@ public class PrescriptionService {
 
 	private static final Logger log = LoggerFactory.getLogger(PrescriptionService.class);
 
+	/** Safety cap on how many pages a single page-wise upload may contain. */
+	private static final int MAX_PAGES_PER_UPLOAD = 20;
+
 	private final VisitRepository visitRepository;
 	private final PatientRepository patientRepository;
 	private final DoctorRepository doctorRepository;
@@ -54,6 +60,8 @@ public class PrescriptionService {
 	private final PiiMasker piiMasker;
 	private final RateLimitService rateLimitService;
 	private final PatientMatchingService patientMatchingService;
+	private final ScanPageService scanPageService;
+	private final DocumentClassifier documentClassifier;
 	private final AppProperties props;
 	private final ObjectMapper mapper;
 	private final TransactionTemplate transactionTemplate;
@@ -61,7 +69,8 @@ public class PrescriptionService {
 	public PrescriptionService(VisitRepository visitRepository, PatientRepository patientRepository,
 			DoctorRepository doctorRepository, StorageService storageService, GeminiService geminiService,
 			AuditService auditService, PiiMasker piiMasker, RateLimitService rateLimitService,
-			PatientMatchingService patientMatchingService, AppProperties props, ObjectMapper mapper,
+			PatientMatchingService patientMatchingService, ScanPageService scanPageService,
+			DocumentClassifier documentClassifier, AppProperties props, ObjectMapper mapper,
 			TransactionTemplate transactionTemplate) {
 		this.visitRepository = visitRepository;
 		this.patientRepository = patientRepository;
@@ -72,6 +81,8 @@ public class PrescriptionService {
 		this.piiMasker = piiMasker;
 		this.rateLimitService = rateLimitService;
 		this.patientMatchingService = patientMatchingService;
+		this.scanPageService = scanPageService;
+		this.documentClassifier = documentClassifier;
 		this.props = props;
 		this.mapper = mapper;
 		this.transactionTemplate = transactionTemplate;
@@ -147,6 +158,128 @@ public class PrescriptionService {
 				.map(this::toSummary)
 				.orElse(null);
 		return ScanDraftResponse.of(extraction, matchedPatient);
+	}
+
+	// ── Page-wise scan/upload ────────────────────────────────────────────────
+
+	/**
+	 * Splits every uploaded file into pages (a PDF is rasterised page by page)
+	 * and extracts each page independently. Nothing is persisted. The page type
+	 * is decided by the printed PID, not by the model.
+	 */
+	public PageScanResponse scanPages(List<MultipartFile> files, Long actorId, String clientIp) {
+		enforceRateLimit(actorId, clientIp);
+		List<ScanPageService.Page> pages = collectPages(files);
+		String hint = buildContextHint(null, null, null);
+
+		List<PageScanResponse.PageItem> items = new ArrayList<>();
+		for (ScanPageService.Page page : pages) {
+			GeminiExtraction extraction = documentClassifier.apply(
+					geminiService.extract(page.imageBytes(), page.mimeType(), hint));
+			PatientSummaryDto matchedPatient = findMatchedPatient(extraction)
+					.map(this::toSummary)
+					.orElse(null);
+			items.add(new PageScanResponse.PageItem(page.sourceIndex(), page.sourceName(), page.page(),
+					page.pageCount(), extraction.documentType(), extraction, matchedPatient,
+					page.thumbnailBase64()));
+		}
+		return PageScanResponse.of(items);
+	}
+
+	/**
+	 * Page-wise equivalent of {@link #upload}: stores one draft per page inside a
+	 * single batch. Pages are independent, so one bad page does not stop the
+	 * rest; its result carries an error instead.
+	 */
+	public PageUploadResponse uploadPages(List<MultipartFile> files, boolean consent, String contextName,
+			String contextPhone, String contextPid, Long actorId, String clientIp) {
+
+		enforceRateLimit(actorId, clientIp);
+		if (!consent) {
+			throw ApiException.badRequest(
+					"Patient consent is required before a prescription can be processed. "
+					+ "Tick the consent box and try again.");
+		}
+		List<ScanPageService.Page> pages = collectPages(files);
+		String hint = buildContextHint(contextName, contextPhone, contextPid);
+		String batchId = UUID.randomUUID().toString();
+
+		List<PageUploadResponse.PageResult> results = new ArrayList<>();
+		for (ScanPageService.Page page : pages) {
+			results.add(uploadOnePage(page, batchId, hint, actorId));
+		}
+		return PageUploadResponse.of(batchId, results);
+	}
+
+	private PageUploadResponse.PageResult uploadOnePage(ScanPageService.Page page, String batchId,
+			String hint, Long actorId) {
+
+		StorageService.StoredFile stored = storageService.save(page.imageBytes(), page.mimeType());
+		try {
+			GeminiExtraction extraction = documentClassifier.apply(
+					geminiService.extract(page.imageBytes(), page.mimeType(), hint));
+			String rawJson = serializeRawAi(extraction, actorId);
+
+			Long draftId = transactionTemplate.execute(status -> {
+				Visit draft = new Visit();
+				draft.setScanFilePath(stored.relativePath());
+				draft.setRawAiJson(rawJson);
+				draft.setVerified(false);
+				draft.setBatchId(batchId);
+				draft.setPageNo(page.page());
+				draft.setPageCount(page.pageCount());
+				Visit saved = visitRepository.save(draft);
+				auditService.record(actorId, AuditService.CREATE, "DraftVisit", saved.getId());
+				return saved.getId();
+			});
+
+			PatientSummaryDto matchedPatient = findMatchedPatient(extraction)
+					.map(this::toSummary)
+					.orElse(null);
+
+			return new PageUploadResponse.PageResult(page.sourceIndex(), page.sourceName(), page.page(),
+					page.pageCount(), extraction.documentType(), draftId, extraction, matchedPatient, null);
+
+		} catch (RuntimeException ex) {
+			// Nothing was verified, so do not leave an orphaned page behind.
+			storageService.delete(stored.relativePath());
+			log.warn("Page {}/{} of {} could not be scanned: {}", page.page(), page.pageCount(),
+					page.sourceName(), ex.getMessage());
+			return new PageUploadResponse.PageResult(page.sourceIndex(), page.sourceName(), page.page(),
+					page.pageCount(), null, null, null, null, errorMessage(ex));
+		}
+	}
+
+	/** Validates every file and flattens them into one list of pages. */
+	private List<ScanPageService.Page> collectPages(List<MultipartFile> files) {
+		if (files == null || files.isEmpty() || files.stream().allMatch(MultipartFile::isEmpty)) {
+			throw ApiException.badRequest("Upload at least one file. Choose a JPG, PNG, WebP or PDF first.");
+		}
+		List<ScanPageService.Page> pages = new ArrayList<>();
+		int sourceIndex = 0;
+		for (MultipartFile file : files) {
+			if (file == null || file.isEmpty()) {
+				sourceIndex++;
+				continue;
+			}
+			ValidatedFile validated = validateFile(file);
+			String sourceName = blankToNull(file.getOriginalFilename());
+			pages.addAll(scanPageService.split(validated.bytes(), validated.mimeType(), sourceIndex,
+					sourceName == null ? "file-" + (sourceIndex + 1) : sourceName));
+			sourceIndex++;
+			if (pages.size() > MAX_PAGES_PER_UPLOAD) {
+				throw ApiException.badRequest(
+						"That upload has more than " + MAX_PAGES_PER_UPLOAD
+						+ " pages. Split it into smaller files and try again.");
+			}
+		}
+		return pages;
+	}
+
+	private static String errorMessage(RuntimeException ex) {
+		return ex.getMessage() == null || ex.getMessage().isBlank()
+				? "Could not scan this page."
+				: ex.getMessage();
 	}
 
 	private record ValidatedFile(byte[] bytes, String mimeType) {
@@ -420,11 +553,21 @@ public class PrescriptionService {
 			doctor = new Doctor();
 			doctor.setName(d.name().trim());
 			doctor.setQualification(blankToNull(d.qualification()));
+			doctor.setExperience(blankToNull(d.experience()));
 			doctor.setRegistrationNo(registrationNo);
 			doctor.setDesignation(blankToNull(d.designation()));
 			doctor.setClinic(blankToNull(d.clinic()));
 			doctor = doctorRepository.save(doctor);
 			auditService.record(actorId, AuditService.CREATE, "Doctor", doctor.getId());
+		} else {
+			boolean changed = false;
+			changed |= fillIfBlank(blankToNull(d.experience()), doctor::getExperience, doctor::setExperience);
+			changed |= fillIfBlank(blankToNull(d.designation()), doctor::getDesignation, doctor::setDesignation);
+			changed |= fillIfBlank(blankToNull(d.clinic()), doctor::getClinic, doctor::setClinic);
+			if (changed) {
+				doctor = doctorRepository.save(doctor);
+				auditService.record(actorId, AuditService.UPDATE, "Doctor", doctor.getId());
+			}
 		}
 
 		// --- 3. Promote the draft into a real visit --------------------------

@@ -54,7 +54,7 @@ class PrescriptionPatientLinkIntegrationTest {
 	private VerifyRequest request(String name, String age, String gender, String visitDate, String visitTime) {
 		return new VerifyRequest(
 				new VerifyRequest.PatientInput(null, name, gender, age, null, null, null, null),
-				new VerifyRequest.DoctorInput("Dr. Test", "MD", null, null, null),
+				new VerifyRequest.DoctorInput("Dr. Test", "MD", null, null, null, null),
 				new VerifyRequest.VisitInput(visitDate, visitTime, null, null, null, null, null),
 				List.of(), List.of(), List.of(), null, null);
 	}

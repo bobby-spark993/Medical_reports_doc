@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { API_BASE, get } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { formatDate, formatDateTime, formatValue, titleCase } from '../lib/format'
+import { formatDate, formatDateTime, formatDay, formatTime, formatValue, titleCase } from '../lib/format'
 import ErrorBanner from '../components/ErrorBanner'
 import Loading from '../components/Loading'
 import FolderIcon from '../components/FolderIcon'
@@ -193,19 +193,36 @@ export default function PatientDetailPage() {
         <section className="card">
           <h2 className="card__title">Appointments &amp; follow-ups</h2>
           {appointments.length ? (
-            <ul className="list">
-              {appointments.map((appointment) => (
-                <li key={appointment.id} className="list__item">
-                  <div>
-                    <strong>{formatDateTime(appointment.scheduledAt)}</strong>
-                    <div className="muted small">{appointment.doctorName || 'Unassigned doctor'}</div>
-                  </div>
-                  <span className={`pill ${appointment.isUpcoming ? 'pill--info' : 'pill--muted'}`}>
-                    {titleCase(appointment.status)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <table className="table table--compact">
+              <thead>
+                <tr>
+                  <th>Registration date</th>
+                  <th>Day</th>
+                  <th>Time</th>
+                  <th>Doctor</th>
+                  <th>Patient</th>
+                  <th>Reg. no.</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {appointments.map((appointment) => (
+                  <tr key={appointment.id}>
+                    <td>{formatDate(patient.createdAt)}</td>
+                    <td>{formatDay(appointment.scheduledAt)}</td>
+                    <td>{formatTime(appointment.scheduledAt)}</td>
+                    <td>{formatValue(appointment.doctorName)}</td>
+                    <td>{formatValue(patient.name)}</td>
+                    <td>{formatValue(patient.pid)}</td>
+                    <td>
+                      <span className={`pill ${appointment.isUpcoming ? 'pill--info' : 'pill--muted'}`}>
+                        {titleCase(appointment.status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <p className="muted">No appointments recorded.</p>
           )}
