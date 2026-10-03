@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.prescriptionscanner.dto.DraftResponse;
+import com.prescriptionscanner.dto.PageInfoResponse;
 import com.prescriptionscanner.dto.PageScanResponse;
 import com.prescriptionscanner.dto.PageUploadResponse;
 import com.prescriptionscanner.dto.ScanDraftResponse;
@@ -109,6 +110,49 @@ public class PrescriptionController {
 
 		return prescriptionService.uploadPages(files, isTruthy(consent), contextName, contextPhone,
 				contextPid, user.getId(), ClientIp.of(http));
+	}
+
+	/** How many pages each uploaded file has (for one-page-at-a-time scanning). */
+	@PostMapping(value = "/page-info", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public PageInfoResponse pageInfo(
+			@RequestParam("files") List<MultipartFile> files,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.pageInfo(files, user.getId(), ClientIp.of(http));
+	}
+
+	/** Scans exactly one page of one file. Nothing is persisted. */
+	@PostMapping(value = "/scan-page", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public PageScanResponse scanPage(
+			@RequestParam("file") MultipartFile file,
+			@RequestParam("page") int page,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.scanSinglePage(file, page, user.getId(), ClientIp.of(http));
+	}
+
+	/** Saves exactly one page as its own draft. */
+	@PostMapping(value = "/save-page", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@PreAuthorize("hasAnyRole('ADMIN','DOCTOR','RECEPTIONIST')")
+	public UploadResponse savePage(
+			@RequestParam("file") MultipartFile file,
+			@RequestParam("page") int page,
+			@RequestParam(value = "pageCount", required = false) Integer pageCount,
+			@RequestParam(value = "batchId", required = false) String batchId,
+			@RequestParam(value = "consent", required = false) String consent,
+			@RequestParam(value = "contextName", required = false) String contextName,
+			@RequestParam(value = "contextPhone", required = false) String contextPhone,
+			@RequestParam(value = "contextPid", required = false) String contextPid,
+			@RequestParam(value = "rawAiJson", required = false) String rawAiJson,
+			@AuthenticationPrincipal SecurityUser user,
+			HttpServletRequest http) {
+
+		return prescriptionService.uploadSinglePage(file, page, pageCount, batchId, isTruthy(consent),
+				contextName, contextPhone, contextPid, rawAiJson, user.getId(), ClientIp.of(http));
 	}
 
 	/** Draft/visit data for the review screen. */

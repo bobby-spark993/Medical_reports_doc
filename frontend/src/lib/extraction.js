@@ -57,6 +57,12 @@ export function buildForm(extracted) {
   const report = e.report ?? {}
   const radiology = e.radiology ?? {}
 
+  // Reports have no "Appt. Date"; fall back to the report dates so the record
+  // still lands on the patient's timeline date-wise.
+  const reportDate = pick(report, 'report_date', 'reportDate')
+    || pick(report, 'received_on', 'receivedOn')
+    || pick(report, 'reported_on', 'reportedOn')
+
   return {
     documentType: blankToEmpty(pick(e, 'document_type', 'documentType')),
     documentTitle: blankToEmpty(pick(e, 'document_title', 'documentTitle')),
@@ -98,7 +104,7 @@ export function buildForm(extracted) {
     },
     referredBy: blankToEmpty(pick(e, 'referred_by', 'referredBy')),
     visit: {
-      visitDate: blankToEmpty(appointment.date),
+      visitDate: blankToEmpty(appointment.date || reportDate),
       visitTime: blankToEmpty(appointment.time),
       validUpTo: blankToEmpty(pick(appointment, 'valid_upto', 'validUpto')),
       appointmentNo: blankToEmpty(pick(appointment, 'appointment_no', 'appointmentNo')),

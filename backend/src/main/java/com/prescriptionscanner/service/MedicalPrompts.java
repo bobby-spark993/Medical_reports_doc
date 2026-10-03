@@ -33,8 +33,10 @@ public final class MedicalPrompts {
 			   Observations and Impression, signed by a radiologist.
 			4. OTHER - anything else (discharge summary, certificate, etc.).
 
-			A page that prints a PID in the form "SNP" followed by 12 digits (e.g. SNP260404071826) is always a
-			PRESCRIPTION. A page with no such PID is a report (LAB_REPORT or RADIOLOGY_REPORT).
+			PATIENT HEADER IS MANDATORY. Every page - prescription, lab report or radiology report - prints a
+			patient header. Always read it and fill patient.name, patient.gender and patient.age (or
+			patient.age_years) with the printed values. Never leave the whole patient block empty when a name
+			is visible on the page. Use null for a field only when it is truly absent.
 
 			Return ONLY JSON matching the requested schema. Use null (or an empty array) for anything not present.
 			NEVER guess illegible handwriting. If a value is hard to read, still put your best reading in its
@@ -89,6 +91,10 @@ public final class MedicalPrompts {
 			}
 
 			Rules for every page:
+			- PATIENT HEADER (do this on EVERY page): read the patient header and always fill patient.name,
+			  and patient.gender / patient.age (or patient.age_years) when they are printed. A report's header
+			  may look like "SUSHILA DEVI 071824" (name + trailing ref number). Never leave the patient block
+			  empty when a name is visible.
 			- Dates: keep them as written (e.g. "04/04/2026", "04 Apr 2026"). Do not reformat.
 			- "uncertain_fields" uses dotted paths from the root, e.g. "patient.age", "medicines[0].frequency".
 			  Put only paths there, never values or explanations.
@@ -97,8 +103,6 @@ public final class MedicalPrompts {
 			  the page is ever the PID: not the barcode number, not a registration / appointment / report / ref
 			  number, and not the trailing digits after a name. If there is no "PID:" label, use null.
 			- Fill only the sections that belong to the page type; leave the others null / empty.
-			- A PID printed as "SNP" + 12 digits means the page is a PRESCRIPTION; a page without that PID is a
-			  report. Set document_type accordingly.
 			- Copy text exactly as printed, including spelling and number formats; never correct or guess.
 			- If a printed value is present but illegible, put the literal "UNREADABLE" in its field and add
 			  its path to uncertain_fields. If a field is absent, use null (or an empty array); never invent it.

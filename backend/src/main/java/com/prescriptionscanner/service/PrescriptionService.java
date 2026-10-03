@@ -29,6 +29,7 @@ import com.prescriptionscanner.domain.PrescribedMedicine;
 import com.prescriptionscanner.domain.Visit;
 import com.prescriptionscanner.dto.ApiError;
 import com.prescriptionscanner.dto.GeminiExtraction;
+import com.prescriptionscanner.dto.PageInfoResponse;
 import com.prescriptionscanner.dto.PageScanResponse;
 import com.prescriptionscanner.dto.PageUploadResponse;
 import com.prescriptionscanner.dto.PatientSummaryDto;
@@ -276,6 +277,131 @@ public class PrescriptionService {
 		return pages;
 	}
 
+	// ── One-page-per-request scan/save ───────────────────────────────────────
+
+	/** How many pages each file has, so the client can scan them one by one. */
+	public PageInfoResponse pageInfo(List<MultipartFile> files, Long actorId, String clientIp) {
+		enforceRateLimit(actorId, clientIp);
+		if (files == null || files.isEmpty() || files.stream().allMatch(MultipartFile::isEmpty)) {
+			throw ApiException.badRequest("Upload at least one file. Choose a JPG, PNG, WebP or PDF first.");
+		}
+		List<PageInfoResponse.FileInfo> infos = new ArrayList<>();
+		int sourceIndex = 0;
+		for (MultipartFile file : files) {
+			if (file == null || file.isEmpty()) {
+				sourceIndex++;
+				continue;
+			}
+			ValidatedFile validated = validateFile(file);
+			int count = scanPageService.pageCount(validated.bytes(), validated.mimeType());
+			infos.add(new PageInfoResponse.FileInfo(sourceIndex, fileName(file, sourceIndex), count));
+			sourceIndex++;
+		}
+		return PageInfoResponse.of(infos);
+	}
+
+	/** Scans a single page of one uploaded file; nothing is persisted. */
+	public PageScanResponse scanSinglePage(MultipartFile file, int page, Long actorId, String clientIp) {
+		enforceRateLimit(actorId, clientIp);
+		ValidatedFile validated = validateFile(file);
+		ScanPageService.Page pageImage = scanPageService.renderPage(validated.bytes(), validated.mimeType(),
+				page, 0, fileName(file, 0));
+
+		GeminiExtraction extraction = documentClassifier.apply(
+				geminiService.extract(pageImage.imageBytes(), pageImage.mimeType(),
+						buildContextHint(null, null, null)));
+		PatientSummaryDto matchedPatient = findMatchedPatient(extraction).map(this::toSummary).orElse(null);
+
+		PageScanResponse.PageItem item = new PageScanResponse.PageItem(pageImage.sourceIndex(),
+				pageImage.sourceName(), pageImage.page(), pageImage.pageCount(), extraction.documentType(),
+				extraction, matchedPatient, pageImage.thumbnailBase64());
+		return PageScanResponse.of(List.of(item));
+	}
+
+	/**
+	 * Saves a single page as its own draft. Reuses the extraction from the scan
+	 * when the client sends it back, so a page is read by Gemini only once.
+	 */
+	public UploadResponse uploadSinglePage(MultipartFile file, int page, Integer pageCount, String batchId,
+			boolean consent, String contextName, String contextPhone, String contextPid, String rawAiJson,
+			Long actorId, String clientIp) {
+
+		enforceRateLimit(actorId, clientIp);
+		if (!consent) {
+			throw ApiException.badRequest(
+					"Patient consent is required before a prescription can be processed. "
+					+ "Tick the consent box and try again.");
+		}
+		ValidatedFile validated = validateFile(file);
+		ScanPageService.Page pageImage = scanPageService.renderPage(validated.bytes(), validated.mimeType(),
+				page, 0, fileName(file, 0));
+
+		GeminiExtraction extraction = parseExtraction(rawAiJson);
+		if (extraction == null) {
+			extraction = geminiService.extract(pageImage.imageBytes(), pageImage.mimeType(),
+					buildContextHint(contextName, contextPhone, contextPid));
+		}
+		extraction = documentClassifier.apply(extraction);
+
+		StorageService.StoredFile stored = storageService.save(pageImage.imageBytes(), pageImage.mimeType());
+		try {
+			String json = serializeRawAi(extraction, actorId);
+			int resolvedPageCount = pageCount == null ? pageImage.pageCount() : pageCount;
+			GeminiExtraction finalExtraction = extraction;
+
+			Long draftId = transactionTemplate.execute(status -> {
+				Visit draft = new Visit();
+				draft.setScanFilePath(stored.relativePath());
+				draft.setRawAiJson(json);
+				draft.setVerified(false);
+				draft.setBatchId(normalizeBatchId(batchId));
+				draft.setPageNo(page);
+				draft.setPageCount(resolvedPageCount);
+				Visit saved = visitRepository.save(draft);
+				auditService.record(actorId, AuditService.CREATE, "DraftVisit", saved.getId());
+				return saved.getId();
+			});
+
+			PatientSummaryDto matchedPatient = findMatchedPatient(finalExtraction)
+					.map(this::toSummary)
+					.orElse(null);
+			return UploadResponse.of(draftId, finalExtraction, matchedPatient);
+
+		} catch (RuntimeException ex) {
+			storageService.delete(stored.relativePath());
+			throw ex;
+		}
+	}
+
+	private static String fileName(MultipartFile file, int sourceIndex) {
+		String name = file.getOriginalFilename();
+		return name == null || name.isBlank() ? "file-" + (sourceIndex + 1) : name;
+	}
+
+	/** Parses the extraction echoed back by the client, or null when absent/invalid. */
+	private GeminiExtraction parseExtraction(String rawAiJson) {
+		if (rawAiJson == null || rawAiJson.isBlank()) {
+			return null;
+		}
+		try {
+			return mapper.readValue(rawAiJson, GeminiExtraction.class).normalized();
+		} catch (Exception ex) {
+			log.warn("Client-supplied extraction could not be parsed: {}", ex.getMessage());
+			return null;
+		}
+	}
+
+	private static String normalizeBatchId(String batchId) {
+		if (batchId != null && !batchId.isBlank()) {
+			try {
+				return UUID.fromString(batchId.trim()).toString();
+			} catch (IllegalArgumentException ignored) {
+				// fall through to a fresh id
+			}
+		}
+		return UUID.randomUUID().toString();
+	}
+
 	private static String errorMessage(RuntimeException ex) {
 		return ex.getMessage() == null || ex.getMessage().isBlank()
 				? "Could not scan this page."
@@ -470,7 +596,13 @@ public class PrescriptionService {
 		if (request.patient() == null || blankToNull(request.patient().name()) == null) {
 			issues.add(new ApiError.FieldIssue("patient.name", "Patient name is required"));
 		}
-		if (request.doctor() == null || blankToNull(request.doctor().name()) == null) {
+		// A prescription must name its doctor; a lab/radiology report has only a
+		// pathologist, so a doctor is not required for those pages.
+		String documentType = request.reviewedJson() == null
+				? ""
+				: request.reviewedJson().path("document_type").asText("");
+		boolean prescription = documentType.isBlank() || "PRESCRIPTION".equalsIgnoreCase(documentType);
+		if (prescription && (request.doctor() == null || blankToNull(request.doctor().name()) == null)) {
 			issues.add(new ApiError.FieldIssue("doctor.name", "Doctor name is required"));
 		}
 		if (!issues.isEmpty()) {
@@ -541,32 +673,35 @@ public class PrescriptionService {
 		}
 
 		// --- 2. Doctor: reuse by registration number, else by name -----------
+		// Reports carry no letterhead doctor, so a null doctor is allowed.
 		Doctor doctor = null;
-		String registrationNo = blankToNull(d.registrationNo());
-		if (registrationNo != null) {
-			doctor = doctorRepository.findFirstByRegistrationNo(registrationNo).orElse(null);
-		}
-		if (doctor == null) {
-			doctor = doctorRepository.findFirstByNameIgnoreCase(d.name().trim()).orElse(null);
-		}
-		if (doctor == null) {
-			doctor = new Doctor();
-			doctor.setName(d.name().trim());
-			doctor.setQualification(blankToNull(d.qualification()));
-			doctor.setExperience(blankToNull(d.experience()));
-			doctor.setRegistrationNo(registrationNo);
-			doctor.setDesignation(blankToNull(d.designation()));
-			doctor.setClinic(blankToNull(d.clinic()));
-			doctor = doctorRepository.save(doctor);
-			auditService.record(actorId, AuditService.CREATE, "Doctor", doctor.getId());
-		} else {
-			boolean changed = false;
-			changed |= fillIfBlank(blankToNull(d.experience()), doctor::getExperience, doctor::setExperience);
-			changed |= fillIfBlank(blankToNull(d.designation()), doctor::getDesignation, doctor::setDesignation);
-			changed |= fillIfBlank(blankToNull(d.clinic()), doctor::getClinic, doctor::setClinic);
-			if (changed) {
+		if (d != null && blankToNull(d.name()) != null) {
+			String registrationNo = blankToNull(d.registrationNo());
+			if (registrationNo != null) {
+				doctor = doctorRepository.findFirstByRegistrationNo(registrationNo).orElse(null);
+			}
+			if (doctor == null) {
+				doctor = doctorRepository.findFirstByNameIgnoreCase(d.name().trim()).orElse(null);
+			}
+			if (doctor == null) {
+				doctor = new Doctor();
+				doctor.setName(d.name().trim());
+				doctor.setQualification(blankToNull(d.qualification()));
+				doctor.setExperience(blankToNull(d.experience()));
+				doctor.setRegistrationNo(registrationNo);
+				doctor.setDesignation(blankToNull(d.designation()));
+				doctor.setClinic(blankToNull(d.clinic()));
 				doctor = doctorRepository.save(doctor);
-				auditService.record(actorId, AuditService.UPDATE, "Doctor", doctor.getId());
+				auditService.record(actorId, AuditService.CREATE, "Doctor", doctor.getId());
+			} else {
+				boolean changed = false;
+				changed |= fillIfBlank(blankToNull(d.experience()), doctor::getExperience, doctor::setExperience);
+				changed |= fillIfBlank(blankToNull(d.designation()), doctor::getDesignation, doctor::setDesignation);
+				changed |= fillIfBlank(blankToNull(d.clinic()), doctor::getClinic, doctor::setClinic);
+				if (changed) {
+					doctor = doctorRepository.save(doctor);
+					auditService.record(actorId, AuditService.UPDATE, "Doctor", doctor.getId());
+				}
 			}
 		}
 
@@ -657,7 +792,7 @@ public class PrescriptionService {
 				patient.getId(),
 				patientCreated,
 				patient.getPid(),
-				doctor.getId(),
+				doctor == null ? null : doctor.getId(),
 				new VerifyResponse.Counts(draft.getDiagnoses().size(), draft.getMedicines().size(),
 						draft.getLabResults().size()),
 				"Verified and saved.");

@@ -88,7 +88,7 @@ public class GeminiService {
 	/** Legacy prescription extraction (kept for the existing /api/prescriptions flow). */
 	public GeminiExtraction extract(byte[] imageBytes, String mimeType, String contextHint) {
 		Map<String, Object> body = buildRequestBody(imageBytes, mimeType, contextHint);
-		return parseExtraction(callGemini(body, this::hasPatientIdentity));
+		return parseExtraction(callGemini(body, this::hasPatientIdentity, this::extractionScore));
 	}
 
 	/**
@@ -102,7 +102,7 @@ public class GeminiService {
 
 	/** Sends one generateContent request, validating config and retrying once on 429. */
 	private String callGemini(Map<String, Object> body) {
-		return callGemini(body, response -> true);
+		return callGemini(body, response -> true, response -> 0);
 	}
 
 	/**
@@ -110,7 +110,8 @@ public class GeminiService {
 	 * test passes. When none pass, the last response is returned as a best effort
 	 * so a partial scan still yields something for the user to review.
 	 */
-	private String callGemini(Map<String, Object> body, java.util.function.Predicate<String> acceptable) {
+	private String callGemini(Map<String, Object> body, java.util.function.Predicate<String> acceptable,
+			java.util.function.ToIntFunction<String> scorer) {
 		String apiKey = props.getGemini().getApiKey();
 		if (apiKey == null || apiKey.isBlank() || "your_key_here".equals(apiKey)) {
 			throw ApiException.internal(
@@ -132,6 +133,7 @@ public class GeminiService {
 		List<String> models = candidateModels();
 		ApiException lastError = null;
 		String bestEffort = null;
+		int bestScore = -1;
 		for (int round = 1; round <= MAX_ROUNDS; round++) {
 			boolean retryable = false;
 			for (String model : models) {
@@ -149,10 +151,15 @@ public class GeminiService {
 						if (acceptable.test(responseBody)) {
 							return responseBody;
 						}
-						// Usable as a fallback, but keep looking for a model that
-						// returns the fuller extraction (e.g. left out the age).
-						log.info("Model {} returned an incomplete extraction; trying the next model", model);
-						bestEffort = responseBody;
+						// Usable as a fallback, but keep the fullest response seen
+						// so far (e.g. one model may still return the patient name).
+						int score = scorer.applyAsInt(responseBody);
+						if (score > bestScore) {
+							bestScore = score;
+							bestEffort = responseBody;
+						}
+						log.info("Model {} returned an incomplete extraction (score {}); trying the next model",
+								model, score);
 						break; // try the next candidate model
 					} catch (RestClientResponseException ex) {
 						int status = ex.getStatusCode().value();
@@ -214,6 +221,44 @@ public class GeminiService {
 			return hasName && (hasAge || hasGender);
 		} catch (Exception ex) {
 			return false;
+		}
+	}
+
+	/**
+	 * Rough completeness score used to pick the best partial extraction when no
+	 * model returns a full patient block. Patient identity weighs the most, so a
+	 * response that still carries the name is never discarded for an emptier one.
+	 */
+	private int extractionScore(String responseBody) {
+		try {
+			JsonNode root = mapper.readTree(extractJsonText(responseBody));
+			JsonNode patient = root.path("patient");
+			int score = 0;
+			if (!patient.path("name").asText("").isBlank()) {
+				score += 8;
+			}
+			if (!patient.path("pid").asText("").isBlank()) {
+				score += 4;
+			}
+			if (!patient.path("gender").asText("").isBlank()) {
+				score += 2;
+			}
+			if (!patient.path("age").asText("").isBlank() || patient.path("age_years").asInt(0) > 0) {
+				score += 2;
+			}
+			if (!patient.path("patient_ref_no").asText("").isBlank()) {
+				score += 2;
+			}
+			if (!root.path("document_type").asText("").isBlank()) {
+				score += 1;
+			}
+			JsonNode labResults = root.path("lab_results");
+			if (labResults.isArray()) {
+				score += labResults.size();
+			}
+			return score;
+		} catch (Exception ex) {
+			return 0;
 		}
 	}
 

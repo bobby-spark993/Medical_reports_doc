@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { upload } from '../lib/api'
 import ErrorBanner from '../components/ErrorBanner'
 import FolderIcon from '../components/FolderIcon'
@@ -12,10 +12,24 @@ function humanSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function pageThumb(page, previews) {
-  if (page.thumbnail) return `data:image/png;base64,${page.thumbnail}`
-  const local = previews[page.sourceIndex]
-  return local || null
+function newBatchId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function typeLabel(documentType) {
+  return documentType === 'PRESCRIPTION' ? 'Prescription' : 'Report'
+}
+
+// Name/age/gender come from the extracted page, enriched by any matched folder.
+function patientSummary(entry) {
+  const info = entry.extracted?.patient ?? {}
+  const match = entry.matchedPatient ?? {}
+  return {
+    name: match.name || info.name || '',
+    age: match.age || info.age || info.age_years || '',
+    gender: match.gender || info.gender || '',
+    id: match.pid || info.pid || info.patient_ref_no || '',
+  }
 }
 
 function saveBatchToSession(batchId, pages) {
@@ -42,33 +56,80 @@ function saveBatchToSession(batchId, pages) {
 export default function UploadPage() {
   const navigate = useNavigate()
   const inputRef = useRef(null)
+  const batchRef = useRef(newBatchId())
 
   const [files, setFiles] = useState([])
   const [previews, setPreviews] = useState({})
   const [dragging, setDragging] = useState(false)
+  const [pages, setPages] = useState([])
+  const [preparing, setPreparing] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [consent, setConsent] = useState(false)
   const [contextName, setContextName] = useState('')
   const [contextPhone, setContextPhone] = useState('')
   const [contextPid, setContextPid] = useState('')
   const [error, setError] = useState(null)
-  const [scanning, setScanning] = useState(false)
-  const [scanned, setScanned] = useState(false)
-  const [scanPages, setScanPages] = useState([])
-  const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState(null)
 
-  useEffect(() => {
-    return () => {
-      Object.values(previews).forEach((url) => URL.revokeObjectURL(url))
+  function patchPage(key, patch) {
+    setPages((prev) => {
+      const next = prev.map((page) => (page.key === key ? { ...page, ...patch } : page))
+      saveBatchToSession(batchRef.current, next)
+      return next
+    })
+  }
+
+  function mergeContext(extracted, matched) {
+    const info = extracted?.patient ?? {}
+    if (!contextName && (matched?.name || info.name)) setContextName(matched?.name || info.name)
+    if (!contextPid && (matched?.pid || info.pid)) setContextPid(matched?.pid || info.pid)
+    if (!contextPhone && matched?.phone) setContextPhone(matched.phone)
+  }
+
+  function buildEntries(fileList, infos) {
+    const entries = []
+    for (const info of infos) {
+      for (let page = 1; page <= info.pageCount; page++) {
+        entries.push({
+          key: `${info.sourceIndex}-${page}`,
+          sourceIndex: info.sourceIndex,
+          sourceName: info.sourceName,
+          page,
+          pageCount: info.pageCount,
+          status: 'idle',
+          documentType: null,
+          extracted: null,
+          matchedPatient: null,
+          thumbnail: null,
+          draftId: null,
+          error: null,
+        })
+      }
     }
-  }, [previews])
+    return entries
+  }
+
+  async function preparePages(fileList) {
+    if (!fileList.length) {
+      setPages([])
+      return
+    }
+    setPreparing(true)
+    setError(null)
+    const form = new FormData()
+    fileList.forEach((file) => form.append('files', file))
+    try {
+      const res = await upload('/api/prescriptions/page-info', form)
+      setPages(buildEntries(fileList, res.files ?? []))
+    } catch (err) {
+      setError(err)
+      setPages([])
+    } finally {
+      setPreparing(false)
+    }
+  }
 
   function addFiles(fileList) {
     setError(null)
-    setScanned(false)
-    setScanPages([])
-    setResult(null)
-
     const accepted = []
     const nextPreviews = { ...previews }
     for (const file of fileList) {
@@ -90,36 +151,32 @@ export default function UploadPage() {
         nextPreviews[startIndex + offset] = URL.createObjectURL(file)
       }
     })
+    const nextFiles = [...files, ...accepted]
     setPreviews(nextPreviews)
-    setFiles((prev) => [...prev, ...accepted])
+    setFiles(nextFiles)
+    preparePages(nextFiles)
   }
 
   function removeFile(index) {
-    setScanned(false)
-    setScanPages([])
-    setResult(null)
-    if (previews[index]) {
-      URL.revokeObjectURL(previews[index])
-    }
-    setPreviews((prev) => {
-      const next = {}
-      Object.entries(prev)
-        .filter(([key]) => Number(key) !== index)
-        .forEach(([key, value]) => {
-          next[Number(key) > index ? Number(key) - 1 : Number(key)] = value
-        })
-      return next
-    })
-    setFiles((prev) => prev.filter((_, i) => i !== index))
+    if (previews[index]) URL.revokeObjectURL(previews[index])
+    const nextPreviews = {}
+    Object.entries(previews)
+      .filter(([key]) => Number(key) !== index)
+      .forEach(([key, value]) => {
+        nextPreviews[Number(key) > index ? Number(key) - 1 : Number(key)] = value
+      })
+    const nextFiles = files.filter((_, i) => i !== index)
+    setPreviews(nextPreviews)
+    setFiles(nextFiles)
+    preparePages(nextFiles)
   }
 
   function clearFiles() {
     Object.values(previews).forEach((url) => URL.revokeObjectURL(url))
     setPreviews({})
     setFiles([])
-    setScanned(false)
-    setScanPages([])
-    setResult(null)
+    setPages([])
+    batchRef.current = newBatchId()
     if (inputRef.current) inputRef.current.value = ''
   }
 
@@ -129,71 +186,74 @@ export default function UploadPage() {
     addFiles(event.dataTransfer.files ?? [])
   }
 
-  function applyScanContext(pages) {
-    const first = pages.find((page) => page.matchedPatient) || pages[0]
-    const match = first?.matchedPatient
-    const info = first?.extracted?.patient ?? {}
-    if (match) {
-      if (match.name) setContextName(match.name)
-      if (match.pid) setContextPid(match.pid)
-      if (match.phone) setContextPhone(match.phone)
-    } else {
-      if (info.name) setContextName(info.name)
-      if (info.pid) setContextPid(info.pid)
-    }
-  }
-
-  async function handleScan() {
-    if (!files.length) return
-    setError(null)
-    setScanning(true)
+  async function scanEntry(entry) {
+    const file = files[entry.sourceIndex]
+    if (!file) return
+    patchPage(entry.key, { status: 'scanning', error: null })
     const form = new FormData()
-    files.forEach((file) => form.append('files', file))
+    form.append('file', file)
+    form.append('page', String(entry.page))
     try {
-      const res = await upload('/api/prescriptions/scan-pages', form)
-      const pages = res.pages ?? []
-      setScanPages(pages)
-      applyScanContext(pages)
-      setScanned(true)
+      const res = await upload('/api/prescriptions/scan-page', form)
+      const item = res.pages?.[0]
+      patchPage(entry.key, {
+        status: 'scanned',
+        documentType: item?.documentType ?? null,
+        extracted: item?.extracted ?? null,
+        matchedPatient: item?.matchedPatient ?? null,
+        thumbnail: item?.thumbnail ?? null,
+      })
+      mergeContext(item?.extracted, item?.matchedPatient)
     } catch (err) {
-      setError(err)
-    } finally {
-      setScanning(false)
+      patchPage(entry.key, { status: 'error', error: err.message || 'Scan failed' })
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault()
-    if (!files.length || !consent) return
-
-    setError(null)
-    setSubmitting(true)
+  async function saveEntry(entry) {
+    const file = files[entry.sourceIndex]
+    if (!file || !consent) return
+    patchPage(entry.key, { status: 'saving', error: null })
     const form = new FormData()
-    files.forEach((file) => form.append('files', file))
+    form.append('file', file)
+    form.append('page', String(entry.page))
+    form.append('pageCount', String(entry.pageCount))
+    form.append('batchId', batchRef.current)
     form.append('consent', 'true')
     if (contextName.trim()) form.append('contextName', contextName.trim())
     if (contextPhone.trim()) form.append('contextPhone', contextPhone.trim())
     if (contextPid.trim()) form.append('contextPid', contextPid.trim())
-
+    if (entry.extracted) form.append('rawAiJson', JSON.stringify(entry.extracted))
     try {
-      const res = await upload('/api/prescriptions/upload-pages', form)
-      saveBatchToSession(res.batchId, res.pages ?? [])
-      setResult(res)
-      setSubmitting(false)
+      const res = await upload('/api/prescriptions/save-page', form)
+      patchPage(entry.key, { status: 'saved', draftId: res.id })
     } catch (err) {
-      setError(err)
-      setSubmitting(false)
+      patchPage(entry.key, { status: 'error', error: err.message || 'Save failed' })
     }
   }
 
-  function resetScan() {
-    setResult(null)
-    clearFiles()
+  async function scanAll() {
+    setBusy(true)
+    for (const entry of pages) {
+      if (entry.status === 'idle' || entry.status === 'error') {
+        await scanEntry(entry)
+      }
+    }
+    setBusy(false)
   }
 
-  const savedPages = result?.pages ?? []
-  const savedCount = savedPages.filter((page) => page.draftId).length
-  const failedPages = savedPages.filter((page) => page.error)
+  async function saveAll() {
+    setBusy(true)
+    for (const entry of pages) {
+      if (entry.status === 'scanned') {
+        await saveEntry(entry)
+      }
+    }
+    setBusy(false)
+  }
+
+  const scannedCount = pages.filter((page) => page.status === 'scanned').length
+  const savedCount = pages.filter((page) => page.status === 'saved').length
+  const totalPages = pages.length
 
   return (
     <div className="page">
@@ -201,68 +261,17 @@ export default function UploadPage() {
         <div>
           <h1>New scan</h1>
           <p className="muted">
-            Upload prescription photos or PDFs. Each page is scanned on its own — a page with a PID
-            (<code>SNP</code> + 12 digits) is treated as a prescription, everything else as a report.
+            Upload prescription photos or PDFs. Pages are scanned one at a time — a page with a PID
+            (<code>SNP</code> + 12 digits) is a prescription, everything else is a report.
           </p>
         </div>
       </header>
 
       <ErrorBanner error={error} />
 
-      {result ? (
+      <div className="grid grid--upload">
         <section className="card">
-          <div className="card__head">
-            <h2 className="card__title">
-              Scan complete — {savedCount} page{savedCount === 1 ? '' : 's'} saved
-            </h2>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={resetScan}>New scan</button>
-          </div>
-
-          <ul className="list">
-            {savedPages.map((page, index) => (
-              <li key={`saved-${index}`} className="list__item">
-                <div className="table__patient">
-                  <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
-                  <div>
-                    <strong>
-                      {page.documentType === 'PRESCRIPTION' ? 'Prescription' : 'Report'} · page {page.page}
-                      {page.pageCount > 1 ? ` of ${page.pageCount}` : ''}
-                    </strong>
-                    <div className="muted small">
-                      {[page.extracted?.patient?.name || page.matchedPatient?.name,
-                        page.extracted?.patient?.pid,
-                        page.sourceName].filter(Boolean).join(' · ') || 'No details'}
-                    </div>
-                  </div>
-                </div>
-                <div className="list__right">
-                  {page.error ? (
-                    <span className="pill pill--danger">Failed</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn--primary btn--sm"
-                      onClick={() => navigate(`/review/${page.draftId}`)}
-                    >
-                      Review
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {failedPages.length ? (
-            <div className="banner banner--warn banner--inline">
-              {failedPages.length} page{failedPages.length === 1 ? '' : 's'} could not be scanned and were skipped.
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      <form className="grid grid--upload" onSubmit={handleSubmit}>
-        <section className="card">
-          <h2 className="card__title">1. Prescription files</h2>
+          <h2 className="card__title">1. Files &amp; pages</h2>
 
           <label
             className={`dropzone${dragging ? ' dropzone--active' : ''}`}
@@ -314,66 +323,122 @@ export default function UploadPage() {
             </ul>
           ) : null}
 
-          {files.length ? (
-            <div className="scan-actions">
-              <button type="button" className="btn btn--primary" onClick={handleScan} disabled={scanning}>
-                {scanning ? (
-                  <>
-                    <span className="spinner spinner--sm" aria-hidden="true" /> Scanning…
-                  </>
-                ) : scanned ? (
-                  'Re-scan pages'
-                ) : (
-                  'Scan pages'
-                )}
-              </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={clearFiles}>
-                Clear all
-              </button>
-            </div>
-          ) : null}
+          {preparing ? <p className="muted small">Reading page counts…</p> : null}
 
-          {scanPages.length ? (
-            <div className="block">
-              <h4>Pages found ({scanPages.length})</h4>
-              <ul className="list">
-                {scanPages.map((page, index) => {
-                  const thumb = pageThumb(page, previews)
-                  const isPrescription = page.documentType === 'PRESCRIPTION'
-                  return (
-                    <li key={`scan-${index}`} className="list__item">
-                      <div className="table__patient">
-                        {thumb ? (
-                          <img src={thumb} alt="" className="table__thumb" />
-                        ) : (
-                          <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
-                        )}
-                        <div>
-                          <strong>
-                            Page {page.page}
-                            {page.pageCount > 1 ? ` of ${page.pageCount}` : ''}
-                          </strong>
-                          <div className="muted small">
-                            {[page.extracted?.patient?.name || page.matchedPatient?.name,
-                              page.extracted?.patient?.pid].filter(Boolean).join(' · ') || 'No details'}
+          {pages.length ? (
+            <>
+              <div className="scan-actions">
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={scanAll}
+                  disabled={busy || !pages.some((p) => p.status === 'idle' || p.status === 'error')}
+                >
+                  Scan all pages
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={saveAll}
+                  disabled={busy || !scannedCount || !consent}
+                >
+                  Save {scannedCount ? `scanned (${scannedCount})` : 'all'}
+                </button>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={clearFiles}>
+                  Clear all
+                </button>
+              </div>
+
+              <div className="block">
+                <h4>
+                  Pages ({totalPages}) · {savedCount} saved
+                </h4>
+                <ul className="list">
+                  {pages.map((entry) => {
+                    const thumb = entry.thumbnail
+                      ? `data:image/png;base64,${entry.thumbnail}`
+                      : previews[entry.sourceIndex]
+                    return (
+                      <li key={entry.key} className="list__item">
+                        <div className="table__patient">
+                          {thumb ? (
+                            <img src={thumb} alt="" className="table__thumb" />
+                          ) : (
+                            <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
+                          )}
+                          <div>
+                            <strong>
+                              Page {entry.page}
+                              {entry.pageCount > 1 ? ` of ${entry.pageCount}` : ''}
+                              {entry.documentType ? ` · ${typeLabel(entry.documentType)}` : ''}
+                            </strong>
+                            {entry.documentType ? (
+                              <>
+                                <div className="muted small">
+                                  {(() => {
+                                    const who = patientSummary(entry)
+                                    return [who.name, who.age, who.gender, who.id].filter(Boolean).join(' · ') || 'No patient details on this page'
+                                  })()}
+                                </div>
+                                <div className="muted small">
+                                  {entry.matchedPatient
+                                    ? `Links to: ${entry.matchedPatient.name}${entry.matchedPatient.pid ? ` (${entry.matchedPatient.pid})` : ''}`
+                                    : 'Will create a new patient folder (matched by name + age + gender)'}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="muted small">{entry.error || entry.sourceName}</div>
+                            )}
                           </div>
                         </div>
-                      </div>
-                      <span className={`pill ${isPrescription ? 'pill--ok' : 'pill--info'}`}>
-                        {isPrescription ? 'Prescription' : 'Report'}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
+                        <div className="list__right">
+                          {entry.status === 'idle' || entry.status === 'error' ? (
+                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => scanEntry(entry)} disabled={busy}>
+                              Scan
+                            </button>
+                          ) : entry.status === 'scanning' ? (
+                            <span className="muted small"><span className="spinner spinner--sm" aria-hidden="true" /> Scanning…</span>
+                          ) : entry.status === 'scanned' ? (
+                            <>
+                              <span className={`pill ${entry.documentType === 'PRESCRIPTION' ? 'pill--ok' : 'pill--info'}`}>
+                                {typeLabel(entry.documentType)}
+                              </span>
+                              {entry.matchedPatient ? (
+                                <Link to={`/patients/${entry.matchedPatient.id}`} className="btn btn--ghost btn--sm">Folder</Link>
+                              ) : null}
+                              <button type="button" className="btn btn--primary btn--sm" onClick={() => saveEntry(entry)} disabled={busy || !consent}>
+                                Save
+                              </button>
+                            </>
+                          ) : entry.status === 'saving' ? (
+                            <span className="muted small"><span className="spinner spinner--sm" aria-hidden="true" /> Saving…</span>
+                          ) : entry.status === 'saved' ? (
+                            <>
+                              <span className={`pill ${entry.documentType === 'PRESCRIPTION' ? 'pill--ok' : 'pill--info'}`}>
+                                {typeLabel(entry.documentType)}
+                              </span>
+                              {entry.matchedPatient ? (
+                                <Link to={`/patients/${entry.matchedPatient.id}`} className="btn btn--ghost btn--sm">Folder</Link>
+                              ) : null}
+                              <button type="button" className="btn btn--primary btn--sm" onClick={() => navigate(`/review/${entry.draftId}`)}>
+                                Review →
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </>
           ) : null}
         </section>
 
         <section className="card">
           <h2 className="card__title">2. Patient context <span className="muted">(optional)</span></h2>
           <p className="muted small">
-            Hints help the AI when handwriting is unclear. You can review every page before saving.
+            Auto-filled from the scanned pages when available. You can review every page before saving.
           </p>
 
           <div className="field-row">
@@ -398,26 +463,13 @@ export default function UploadPage() {
             </span>
           </label>
 
-          <button type="submit" className="btn btn--primary" disabled={!files.length || !consent || !scanned || submitting}>
-            {submitting ? (
-              <>
-                <span className="spinner spinner--sm" aria-hidden="true" /> Analysing…
-              </>
-            ) : (
-              'Save & analyse all pages'
-            )}
-          </button>
-          {!scanned ? (
-            <p className="muted small">Scan the pages first, then save.</p>
-          ) : submitting ? (
-            <p className="muted small">This can take a minute or more while the AI reads every page.</p>
-          ) : (
-            <p className="muted small">
-              {scanPages.length} page{scanPages.length === 1 ? '' : 's'} will be saved as separate records.
-            </p>
-          )}
+          <p className="muted small">
+            {totalPages
+              ? `${totalPages} page${totalPages === 1 ? '' : 's'} · ${savedCount} saved. Consent is required before saving.`
+              : 'Add files to see the page list.'}
+          </p>
         </section>
-      </form>
+      </div>
     </div>
   )
 }
