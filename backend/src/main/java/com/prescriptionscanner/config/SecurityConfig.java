@@ -56,6 +56,10 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/auth/logout").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/auth/reset-password").permitAll()
+						// The logo is shown on the public login/register pages.
+						.requestMatchers(HttpMethod.GET, "/api/settings/logo").permitAll()
 						.requestMatchers("/error", "/favicon.ico").permitAll()
 						// Everything under /api needs a valid JWT cookie.
 						.requestMatchers("/api/**").authenticated()

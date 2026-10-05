@@ -22,3 +22,12 @@ app.jwt.secret=change_me
 # app.ai.mask-pii=true
 # app.gemini.model=gemini-2.5-flash
 # app.seed.admin-password=Admin@12345
+
+# ── Email (for password-reset OTPs) ─────────────────────────────────────────
+# Fill these in to email OTP codes. Without them the code is logged to the
+# server console instead.
+# spring.mail.host=smtp.gmail.com
+# spring.mail.port=587
+# spring.mail.username=you@gmail.com
+# spring.mail.password=your_app_password
+# app.mail.from=Prescription Scanner <you@gmail.com>

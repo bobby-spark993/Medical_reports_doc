@@ -32,6 +32,24 @@ No secrets are committed. Real values live in the gitignored
 | `JWT_SECRET` | *(required in prod)* | Signing secret for auth cookies. |
 | `UPLOAD max types` | jpg/jpeg/png/webp/pdf | `app.upload.allowed-types` |
 
+### Email (password-reset OTP)
+
+OTP codes are emailed to the account when SMTP is configured. Create the
+gitignored repo-root `.env` (see `.env.example`) once:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=you@gmail.com
+SMTP_PASSWORD=your-16-char-app-password
+MAIL_FROM=Prescription Scanner <you@gmail.com>
+```
+
+`scripts/run-backend.mjs` loads `.env` automatically for `pnpm run dev`. One
+Gmail app password can be reused in every project — Google does not require a
+unique one per project. If SMTP is not configured, the OTP is printed to the
+server console instead (so staff can always reset a password).
+
 Setup:
 
 ```powershell

@@ -19,6 +19,7 @@ public class AppProperties {
 	private Seed seed = new Seed();
 	private RateLimit rateLimit = new RateLimit();
 	private Cors cors = new Cors();
+	private Mail mail = new Mail();
 
 	public static class Upload {
 		private String dir = "storage/uploads";
@@ -120,6 +121,14 @@ public class AppProperties {
 		public void setAllowedOrigins(List<String> allowedOrigins) { this.allowedOrigins = allowedOrigins; }
 	}
 
+	public static class Mail {
+		/** "From" address used for OTP emails. Falls back to the SMTP username. */
+		private String from = "";
+
+		public String getFrom() { return from; }
+		public void setFrom(String from) { this.from = from; }
+	}
+
 	public Upload getUpload() { return upload; }
 	public void setUpload(Upload upload) { this.upload = upload; }
 	public Jwt getJwt() { return jwt; }
@@ -134,4 +143,6 @@ public class AppProperties {
 	public void setRateLimit(RateLimit rateLimit) { this.rateLimit = rateLimit; }
 	public Cors getCors() { return cors; }
 	public void setCors(Cors cors) { this.cors = cors; }
+	public Mail getMail() { return mail; }
+	public void setMail(Mail mail) { this.mail = mail; }
 }

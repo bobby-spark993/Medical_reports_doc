@@ -12,9 +12,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prescriptionscanner.config.AppProperties;
 import com.prescriptionscanner.dto.AuthResponse;
+import com.prescriptionscanner.dto.ForgotPasswordRequest;
 import com.prescriptionscanner.dto.LoginRequest;
 import com.prescriptionscanner.dto.OkResponse;
 import com.prescriptionscanner.dto.RegisterRequest;
+import com.prescriptionscanner.dto.ResetPasswordRequest;
 import com.prescriptionscanner.dto.UserDto;
 import com.prescriptionscanner.exception.ApiException;
 import com.prescriptionscanner.security.JwtAuthenticationFilter;
@@ -22,6 +24,7 @@ import com.prescriptionscanner.security.JwtService;
 import com.prescriptionscanner.security.SecurityUser;
 import com.prescriptionscanner.service.AuditService;
 import com.prescriptionscanner.service.AuthService;
+import com.prescriptionscanner.service.PasswordResetService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -34,13 +37,15 @@ public class AuthController {
 	private final JwtService jwtService;
 	private final AppProperties props;
 	private final AuditService auditService;
+	private final PasswordResetService passwordResetService;
 
 	public AuthController(AuthService authService, JwtService jwtService, AppProperties props,
-			AuditService auditService) {
+			AuditService auditService, PasswordResetService passwordResetService) {
 		this.authService = authService;
 		this.jwtService = jwtService;
 		this.props = props;
 		this.auditService = auditService;
+		this.passwordResetService = passwordResetService;
 	}
 
 	@PostMapping("/login")
@@ -56,6 +61,28 @@ public class AuthController {
 			HttpServletRequest http) {
 
 		return withSession(authService.register(request, ClientIp.of(http)));
+	}
+
+	/**
+	 * Issues a 6-digit OTP for password reset. The OTP is logged to the server
+	 * console (no SMTP is configured yet) and the response is the same whether or
+	 * not the email exists, to avoid account enumeration.
+	 */
+	@PostMapping("/forgot-password")
+	public ResponseEntity<OkResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,
+			HttpServletRequest http) {
+
+		passwordResetService.requestReset(request.email(), ClientIp.of(http));
+		return ResponseEntity.ok(OkResponse.success());
+	}
+
+	/** Verifies the OTP and sets a new password for the account. */
+	@PostMapping("/reset-password")
+	public ResponseEntity<OkResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request,
+			HttpServletRequest http) {
+
+		passwordResetService.reset(request.email(), request.otp(), request.password(), ClientIp.of(http));
+		return ResponseEntity.ok(OkResponse.success());
 	}
 
 	private ResponseEntity<AuthResponse> withSession(AuthService.LoginResult result) {

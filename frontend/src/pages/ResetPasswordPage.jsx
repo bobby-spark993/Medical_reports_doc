@@ -4,21 +4,14 @@ import { useAuth } from '../lib/auth'
 import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
 
-const ROLES = [
-  { value: 'receptionist', label: 'Receptionist' },
-  { value: 'doctor', label: 'Doctor' },
-  { value: 'admin', label: 'Admin' },
-]
-
-export default function RegisterPage() {
-  const { user, loading, register } = useAuth()
+export default function ResetPasswordPage() {
+  const { user, loading, resetPassword } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [otp, setOtp] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [role, setRole] = useState('receptionist')
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -42,11 +35,10 @@ export default function RegisterPage() {
 
     setSubmitting(true)
     try {
-      await register({ name: name.trim(), email: email.trim(), password, role })
-      navigate(redirectTo, { replace: true })
+      await resetPassword(email.trim(), otp.trim(), password)
+      navigate('/login', { replace: true })
     } catch (err) {
-      setError(err.message || 'Sign up failed')
-    } finally {
+      setError(err.message || 'Reset failed')
       setSubmitting(false)
     }
   }
@@ -56,24 +48,11 @@ export default function RegisterPage() {
       <div className="auth__card">
         <div className="auth__brand">
           <BrandMark size="lg" />
-          <h1>Create an account</h1>
-          <p>Register as clinic staff to digitise prescriptions and manage patient records.</p>
+          <h1>Set a new password</h1>
+          <p>Enter the OTP sent to your inbox and choose a new password.</p>
         </div>
 
         <form className="auth__form" onSubmit={handleSubmit} noValidate>
-          <label className="field">
-            <span>Full name</span>
-            <input
-              type="text"
-              name="name"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Dr. Ramesh Kumar"
-              required
-            />
-          </label>
-
           <label className="field">
             <span>Email</span>
             <input
@@ -88,16 +67,22 @@ export default function RegisterPage() {
           </label>
 
           <label className="field">
-            <span>Role</span>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <span>One-time code (OTP)</span>
+            <input
+              type="text"
+              name="otp"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="6-digit code"
+              maxLength={6}
+              required
+            />
           </label>
 
           <label className="field">
-            <span>Password</span>
+            <span>New password</span>
             <input
               type="password"
               name="password"
@@ -110,7 +95,7 @@ export default function RegisterPage() {
           </label>
 
           <label className="field">
-            <span>Confirm password</span>
+            <span>Confirm new password</span>
             <input
               type="password"
               name="confirm"
@@ -129,12 +114,13 @@ export default function RegisterPage() {
           ) : null}
 
           <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
+            {submitting ? 'Resetting…' : 'Reset password'}
           </button>
         </form>
 
         <p className="auth__hint">
-          Already have an account? <Link to="/login">Sign in</Link>
+          <Link to="/forgot-password">Request a new code</Link> ·{' '}
+          <Link to="/login">Back to sign in</Link>
         </p>
       </div>
     </div>

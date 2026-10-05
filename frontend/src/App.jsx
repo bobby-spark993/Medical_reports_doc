@@ -5,12 +5,15 @@ import RequireRole from './components/RequireRole'
 import AppLayout from './components/AppLayout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import UploadPage from './pages/UploadPage'
 import ReviewPage from './pages/ReviewPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import UsersPage from './pages/UsersPage'
+import SettingsPage from './pages/SettingsPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 export default function App() {
@@ -20,6 +23,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
@@ -33,6 +38,14 @@ export default function App() {
                 element={
                   <RequireRole role="admin">
                     <UsersPage />
+                  </RequireRole>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <RequireRole role="admin">
+                    <SettingsPage />
                   </RequireRole>
                 }
               />

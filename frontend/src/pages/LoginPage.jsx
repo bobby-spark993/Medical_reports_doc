@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import Loading from '../components/Loading'
+import BrandMark from '../components/BrandMark'
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth()
@@ -35,11 +36,7 @@ export default function LoginPage() {
     <div className="auth">
       <div className="auth__card">
         <div className="auth__brand">
-          <span className="brand-mark brand-mark--lg" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v18M3 12h18" />
-            </svg>
-          </span>
+          <BrandMark size="lg" />
           <h1>Prescription Scanner</h1>
           <p>Sign in to digitise prescriptions and manage patient records.</p>
         </div>
@@ -84,6 +81,9 @@ export default function LoginPage() {
 
         <p className="auth__hint">
           New here? <Link to="/register">Create an account</Link>
+        </p>
+        <p className="auth__forgot">
+          <Link to="/forgot-password">Forgot password?</Link>
         </p>
       </div>
     </div>
