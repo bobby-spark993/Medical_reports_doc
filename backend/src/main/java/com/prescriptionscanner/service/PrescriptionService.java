@@ -481,6 +481,17 @@ public class PrescriptionService {
 			}
 			log.info("Patient match: PID not in DB, falling back to name + age");
 		}
+		// Lab reports print only the trailing 6-digit ref number, never a PID.
+		// Match it against Patient.pidShort so a report folds into the same
+		// folder as the prescription that shares that number.
+		String refNo = blankToNull(info.patientRefNo());
+		if (refNo != null) {
+			Optional<Patient> byRef = patientMatchingService.matchByPidShort(refNo);
+			if (byRef.isPresent()) {
+				log.info("Patient match: found by patient_ref_no (pidShort)");
+				return byRef;
+			}
+		}
 		if (blankToNull(info.name()) == null) {
 			log.info("Patient match skipped: no patient name in extraction");
 			return Optional.empty();
@@ -522,6 +533,15 @@ public class PrescriptionService {
 		}
 		String trimmed = s.trim();
 		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	/** The trailing ref number a lab report prints next to the patient name. */
+	private static String patientRefNo(JsonNode reviewedJson) {
+		if (reviewedJson == null) {
+			return null;
+		}
+		JsonNode node = reviewedJson.path("patient").path("patient_ref_no");
+		return node.isMissingNode() || node.isNull() ? null : blankToNull(node.asString());
 	}
 
 	private String serializeRawAi(GeminiExtraction extraction, Long actorId) {
@@ -624,13 +644,22 @@ public class PrescriptionService {
 				? new VerifyRequest.VisitInput(null, null, null, null, null, null, null)
 				: request.visit();
 
-		// --- 1. Patient: reuse by pid, else by name+phone --------------------
+		// --- 1. Patient: reuse by pid, else by ref no, else by name+phone ----
 		boolean patientCreated = false;
 		Patient patient = null;
 
 		String pid = blankToNull(p.pid());
+		// The trailing 6-digit number on a lab report; the prescription's last
+		// 6 PID digits. Stored on the patient so the two pages share one folder.
+		String refNo = patientRefNo(request.reviewedJson());
+		String pidShort = pid != null ? PatientMatchingService.pidShortOf(pid)
+				: PatientMatchingService.pidShortOf(refNo);
+
 		if (pid != null) {
 			patient = patientRepository.findByPid(pid).orElse(null);
+		}
+		if (patient == null && pidShort != null) {
+			patient = patientRepository.findFirstByPidShort(pidShort).orElse(null);
 		}
 		String name = p.name().trim();
 		String phone = blankToNull(p.phone());
@@ -645,6 +674,7 @@ public class PrescriptionService {
 		if (patient == null) {
 			patient = new Patient();
 			patient.setPid(pid);
+			patient.setPidShort(pidShort);
 			patient.setName(name);
 			patient.setGender(blankToNull(p.gender()));
 			patient.setAge(blankToNull(p.age()));
@@ -659,6 +689,7 @@ public class PrescriptionService {
 			// Fill gaps the OCR left, without overwriting data we already trust.
 			boolean changed = false;
 			changed |= fillIfBlank(pid, patient::getPid, patient::setPid);
+			changed |= fillIfBlank(pidShort, patient::getPidShort, patient::setPidShort);
 			changed |= fillIfBlank(blankToNull(p.gender()), patient::getGender, patient::setGender);
 			changed |= fillIfBlank(blankToNull(p.age()), patient::getAge, patient::setAge);
 			changed |= fillIfBlank(blankToNull(p.maritalStatus()), patient::getMaritalStatus,
@@ -796,6 +827,23 @@ public class PrescriptionService {
 				new VerifyResponse.Counts(draft.getDiagnoses().size(), draft.getMedicines().size(),
 						draft.getLabResults().size()),
 				"Verified and saved.");
+	}
+
+	/**
+	 * Deletes a saved document (visit) together with its stored scan. Diagnoses,
+	 * medicines and lab results are removed by orphanRemoval on the visit.
+	 */
+	@Transactional
+	public void deleteVisit(Long visitId, Long actorId) {
+		Visit visit = visitRepository.findById(visitId)
+				.orElseThrow(() -> ApiException.notFound("No such document."));
+
+		String scanPath = visit.getScanFilePath();
+		visitRepository.delete(visit);
+		if (scanPath != null && !scanPath.isBlank()) {
+			storageService.delete(scanPath);
+		}
+		auditService.record(actorId, AuditService.DELETE, "Visit", visitId);
 	}
 
 	private boolean fillIfBlank(String incoming, java.util.function.Supplier<String> getter,

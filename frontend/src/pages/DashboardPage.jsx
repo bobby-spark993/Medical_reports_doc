@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { get } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatDate } from '../lib/format'
+import { formContainer, fieldItem } from '../lib/motion'
 import ErrorBanner from '../components/ErrorBanner'
 import Loading from '../components/Loading'
+
+const MotionLink = motion.create(Link)
 
 export default function DashboardPage() {
   const { user } = useAuth()
@@ -36,22 +40,39 @@ export default function DashboardPage() {
 
       <ErrorBanner error={error} />
 
-      <div className="hero-actions">
-        <Link to="/upload" className="action-card action-card--primary">
+      <motion.div
+        className="hero-actions"
+        variants={formContainer}
+        initial="hidden"
+        animate="show"
+      >
+        <MotionLink
+          to="/upload"
+          className="action-card action-card--primary"
+          variants={fieldItem}
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.99 }}
+        >
           <span className="action-card__icon">＋</span>
           <strong>Digitise a prescription</strong>
           <span>Upload a scan and let the AI extract the fields.</span>
-        </Link>
-        <Link to="/patients" className="action-card">
+        </MotionLink>
+        <MotionLink
+          to="/patients"
+          className="action-card"
+          variants={fieldItem}
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.99 }}
+        >
           <span className="action-card__icon">🔍</span>
           <strong>Browse patients</strong>
           <span>Search records and open full visit history.</span>
-        </Link>
-        <div className="action-card action-card--stat">
+        </MotionLink>
+        <motion.div className="action-card action-card--stat" variants={fieldItem}>
           <span className="stat__value">{total ?? '—'}</span>
           <span className="muted">Patients on record</span>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       <section className="card">
         <div className="card__head">
@@ -62,11 +83,16 @@ export default function DashboardPage() {
         {loading ? (
           <Loading label="Loading recent patients…" />
         ) : recent?.items?.length ? (
-          <ul className="list">
+          <motion.ul
+            className="list"
+            variants={formContainer}
+            initial="hidden"
+            animate="show"
+          >
             {recent.items.map((patient) => (
-              <li key={patient.id} className="list__item">
+              <motion.li key={patient.id} className="list__item" variants={fieldItem} layout>
                 <div>
-                  <Link to={`/patients/${patient.id}`} className="table__link">{patient.name}</Link>
+                  <Link to={`/patients/${patient.id}`} className="table__link btn btn--ghost btn--sm">{patient.name}</Link>
                   <div className="muted small">
                     {[patient.pid, patient.age, patient.gender, patient.phone].filter(Boolean).join(' · ') || 'No details'}
                   </div>
@@ -77,9 +103,9 @@ export default function DashboardPage() {
                     <span className="pill pill--info">Follow-up {formatDate(patient.nextFollowUp)}</span>
                   ) : null}
                 </div>
-              </li>
+              </motion.li>
             ))}
-          </ul>
+          </motion.ul>
         ) : (
           <div className="empty">
             <p>No patients yet.</p>

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Random;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,9 @@ import com.prescriptionscanner.dto.VerifyRequest;
 import com.prescriptionscanner.dto.VerifyResponse;
 import com.prescriptionscanner.repository.PatientRepository;
 import com.prescriptionscanner.repository.VisitRepository;
+
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * The "one PID per name + age + gender, data saved date-wise" rule for the
@@ -34,6 +38,9 @@ class PrescriptionPatientLinkIntegrationTest {
 
 	@Autowired
 	private VisitRepository visitRepository;
+
+	@Autowired
+	private ObjectMapper mapper;
 
 	private Patient existingPatient(String name) {
 		Patient patient = new Patient();
@@ -97,5 +104,38 @@ class PrescriptionPatientLinkIntegrationTest {
 		assertThat(visits.get(0).getVisitTime()).isEqualTo("04:45 PM");
 		assertThat(visits.get(1).getVisitDate()).isEqualTo(LocalDate.of(2026, 4, 4));
 		assertThat(visits.get(1).getVisitTime()).isEqualTo("09:15 AM");
+	}
+
+	/**
+	 * A lab report prints only the trailing 6 digits next to the name and carries
+	 * no PID, no age and no gender. Even when the name differs from the
+	 * prescription, the shared ref number must fold the report into the same
+	 * patient folder instead of creating a second one.
+	 */
+	@Test
+	void reportLinksToThePrescriptionPatientByPrintedRefNo() {
+		String tail = String.format("%06d", Math.abs(new Random().nextInt(1_000_000)));
+		Patient prescriptionPatient = new Patient();
+		prescriptionPatient.setName("Ref Demo " + System.nanoTime());
+		prescriptionPatient.setGender("Female");
+		prescriptionPatient.setAge("43");
+		prescriptionPatient.setPid("SNP260404" + tail);
+		prescriptionPatient.setPidShort(tail);
+		prescriptionPatient = patientRepository.save(prescriptionPatient);
+
+		ObjectNode reviewed = mapper.createObjectNode();
+		reviewed.put("document_type", "LAB_REPORT");
+		reviewed.putObject("patient").put("patient_ref_no", tail);
+
+		VerifyRequest report = new VerifyRequest(
+				new VerifyRequest.PatientInput(null, "SUSHILA DEVI", null, null, null, null, null, null),
+				null,
+				new VerifyRequest.VisitInput("2026-04-04", null, null, null, null, null, null),
+				List.of(), List.of(), List.of(), null, reviewed);
+
+		VerifyResponse response = prescriptionService.verify(draft(), report, 1L);
+
+		assertThat(response.patientCreated()).isFalse();
+		assertThat(response.patientId()).isEqualTo(prescriptionPatient.getId());
 	}
 }

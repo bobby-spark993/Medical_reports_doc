@@ -15,7 +15,8 @@ import jakarta.persistence.Table;
 		@Index(name = "appointments_patient_idx", columnList = "patient_id"),
 		@Index(name = "appointments_doctor_idx", columnList = "doctor_id"),
 		@Index(name = "appointments_scheduled_at_idx", columnList = "scheduled_at"),
-		@Index(name = "appointments_status_idx", columnList = "status")
+		@Index(name = "appointments_status_idx", columnList = "status"),
+		@Index(name = "appointments_patient_scheduled_idx", columnList = "patient_id,scheduled_at")
 })
 public class Appointment extends BaseEntity {
 

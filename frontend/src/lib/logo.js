@@ -24,15 +24,30 @@ export function refreshLogo() {
   probe()
 }
 
+/** Point the browser tab icon at the given image (default favicon otherwise). */
+function setFavicon(href) {
+  if (typeof document === 'undefined') return
+  let link = document.querySelector("link[rel~='icon']")
+  if (!link) {
+    link = document.createElement('link')
+    link.rel = 'icon'
+    document.head.appendChild(link)
+  }
+  link.removeAttribute('type')
+  link.href = href
+}
+
 function probe() {
   if (state !== null) return
   const img = new Image()
   img.onload = () => {
     state = true
+    setFavicon(LOGO_SRC)
     listeners.forEach((fn) => fn())
   }
   img.onerror = () => {
     state = false
+    setFavicon('/favicon.svg')
     listeners.forEach((fn) => fn())
   }
   img.src = LOGO_SRC

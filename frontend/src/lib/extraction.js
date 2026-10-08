@@ -57,10 +57,11 @@ export function buildForm(extracted) {
   const report = e.report ?? {}
   const radiology = e.radiology ?? {}
 
-  // Reports have no "Appt. Date"; fall back to the report dates so the record
-  // still lands on the patient's timeline date-wise.
-  const reportDate = pick(report, 'report_date', 'reportDate')
-    || pick(report, 'received_on', 'receivedOn')
+  // A prescription's document date is its "Appt. Date"; a report's is the
+  // "Received on" date printed on it (falling back to other report dates) so
+  // the record lands on the patient's timeline date-wise, not scan-wise.
+  const reportDate = pick(report, 'received_on', 'receivedOn')
+    || pick(report, 'report_date', 'reportDate')
     || pick(report, 'reported_on', 'reportedOn')
 
   return {

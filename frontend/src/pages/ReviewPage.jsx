@@ -45,8 +45,14 @@ function MetaBlock({ title, rows }) {
   )
 }
 
+// Lower-case, trimmed comparison for grouping pages by patient demographics.
+function normPart(value) {
+  return (value ?? '').toString().trim().toLowerCase()
+}
+
 // A simple editor for a list of free-text lines (complaints, advice, ...).
 function ListEditor({ title, items, verified, onPatch, onAdd, onRemove, placeholder }) {
+  if (items.length === 0) return null
   return (
     <section className="card">
       <div className="card__head">
@@ -55,7 +61,6 @@ function ListEditor({ title, items, verified, onPatch, onAdd, onRemove, placehol
           <button type="button" className="btn btn--ghost btn--sm" onClick={onAdd}>+ Add</button>
         ) : null}
       </div>
-      {items.length === 0 ? <p className="muted">None captured.</p> : null}
       {items.map((value, index) => (
         <div className="repeat-row" key={`${title}-${index}`}>
           <input
@@ -136,6 +141,32 @@ export default function ReviewPage() {
   const batchIndex = batchPages.findIndex((page) => page.id === draft?.visit?.id)
   const prevPage = batchIndex > 0 ? batchPages[batchIndex - 1] : null
   const nextPage = batchIndex >= 0 && batchIndex < batchPages.length - 1 ? batchPages[batchIndex + 1] : null
+
+  // Group the batch's pages into one folder per patient. The prescription page
+  // is the primary document: its name/age/gender identify the folder and every
+  // report page folds in under it.
+  const batchFolders = useMemo(() => {
+    const pages = (batch?.pages ?? []).filter((page) => page.id)
+    if (!pages.length) return []
+    const groups = new Map()
+    for (const page of pages) {
+      const key = `${normPart(page.name)}|${normPart(page.age)}|${normPart(page.gender)}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(page)
+    }
+    const rank = (page) => (page.documentType === 'PRESCRIPTION' ? 0 : 1)
+    return [...groups.values()].map((group) => {
+      const primary = group.find((page) => page.documentType === 'PRESCRIPTION') || group[0]
+      const pages = [...group].sort((a, b) => rank(a) - rank(b) || (a.page ?? 0) - (b.page ?? 0))
+      return {
+        key: String(primary.id ?? `${primary.name}-${primary.age}-${primary.gender}`),
+        name: primary.name || 'Unknown patient',
+        age: primary.age,
+        gender: primary.gender,
+        pages,
+      }
+    })
+  }, [batch])
 
   // The exact JSON saved on the visit; fall back to the parsed extraction.
   const rawJsonText = useMemo(() => {
@@ -223,11 +254,18 @@ export default function ReviewPage() {
   const { visit, patient, doctor } = draft
   const verified = visit?.isVerified
 
+  // Show only the sections that belong to this page's type. The backend forces
+  // every page to PRESCRIPTION or LAB_REPORT (see DocumentClassifier); a blank
+  // type falls back to the prescription layout, matching the verify rules.
+  const documentType = (form.documentType || '').trim().toUpperCase()
+  const isPrescription = documentType !== 'LAB_REPORT' && documentType !== 'RADIOLOGY_REPORT'
+  const isReport = !isPrescription
+
   return (
     <div className="page">
       <header className="page__head">
         <div>
-          <Link to="/" className="back-link">← Back to dashboard</Link>
+          <Link to="/" className="back-link btn btn--ghost btn--sm">← Back to dashboard</Link>
           <h1>Review extraction</h1>
           <p className="muted">
             Draft #{visit?.id} · created {formatDateTime(visit?.createdAt)}
@@ -241,7 +279,59 @@ export default function ReviewPage() {
 
       <ErrorBanner error={error} />
 
-      {(batchPages.length > 1 || (visit?.pageCount ?? 1) > 1) ? (
+      {batchFolders.length ? (
+        <section className="card">
+          <div className="card__head">
+            <h2 className="card__title">Patient folder — pages in this scan</h2>
+            <span className="muted small">
+              {batchFolders.reduce((count, folder) => count + folder.pages.length, 0)} page(s)
+            </span>
+          </div>
+          {batchFolders.map((folder) => (
+            <div className="block" key={folder.key}>
+              <div className="table__patient">
+                <span className="table__folder" aria-hidden="true"><FolderIcon size={20} /></span>
+                <div>
+                  <strong>{folder.name}</strong>
+                  <div className="muted small">
+                    {[folder.age, folder.gender].filter(Boolean).join(' · ') || 'No demographics recorded'}
+                  </div>
+                </div>
+              </div>
+              <ul className="list">
+                {folder.pages.map((page) => (
+                  <li key={page.id} className="list__item">
+                    <div className="table__patient">
+                      <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
+                      <div>
+                        <strong>
+                          Page {page.page}
+                          {page.pageCount > 1 ? ` of ${page.pageCount}` : ''}
+                        </strong>
+                        <div className="muted small">
+                          {[page.sourceName, page.documentType === 'PRESCRIPTION' ? 'Prescription' : 'Report']
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="list__right">
+                      <span className={`pill ${page.documentType === 'PRESCRIPTION' ? 'pill--ok' : 'pill--info'}`}>
+                        {page.documentType === 'PRESCRIPTION' ? 'Prescription' : 'Report'}
+                      </span>
+                      {page.id === visit?.id ? (
+                        <span className="muted small">Viewing</span>
+                      ) : (
+                        <Link to={`/review/${page.id}`} className="btn btn--ghost btn--sm">Open</Link>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ) : (batchPages.length > 1 || (visit?.pageCount ?? 1) > 1) ? (
         <div className="banner banner--info banner--inline page-nav">
           <span>
             Page {visit?.pageNo ?? 1}
@@ -262,7 +352,7 @@ export default function ReviewPage() {
       {verified ? (
         <div className="banner banner--info">
           This prescription has already been verified.{' '}
-          {patient?.id ? <Link to={`/patients/${patient.id}`}>View the patient record →</Link> : null}
+          {patient?.id ? <Link to={`/patients/${patient.id}`} className="btn btn--ghost btn--sm">View the patient record →</Link> : null}
         </div>
       ) : null}
 
@@ -371,19 +461,21 @@ export default function ReviewPage() {
           ]}
         />
 
-        <MetaBlock
-          title="Report"
-          rows={[
-            ['Report ID', form.report.reportId],
-            ['Received on', form.report.receivedOn],
-            ['Reported on', form.report.reportedOn],
-            ['Report date', form.report.reportDate],
-            ['Signed by', [form.report.signedBy, form.report.signedByDesignation].filter(Boolean).join(' — ')],
-            ['Technician', form.report.technician],
-          ]}
-        />
+        {isReport ? (
+          <MetaBlock
+            title="Report"
+            rows={[
+              ['Report ID', form.report.reportId],
+              ['Received on', form.report.receivedOn],
+              ['Reported on', form.report.reportedOn],
+              ['Report date', form.report.reportDate],
+              ['Signed by', [form.report.signedBy, form.report.signedByDesignation].filter(Boolean).join(' — ')],
+              ['Technician', form.report.technician],
+            ]}
+          />
+        ) : null}
 
-        {form.abnormalFindings.length ? (
+        {isReport && form.abnormalFindings.length ? (
           <div className="block">
             <h4>Abnormal findings</h4>
             <ul className="banner__issues">
@@ -394,7 +486,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.warnings.length ? (
+        {isReport && form.warnings.length ? (
           <div className="banner banner--warn">
             <div>
               <strong>Warnings</strong>
@@ -407,7 +499,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.chiefComplaints.length ? (
+        {isPrescription && form.chiefComplaints.length ? (
           <div className="block">
             <h4>Chief complaints</h4>
             <div className="tags">
@@ -418,7 +510,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.examination.length ? (
+        {isPrescription && form.examination.length ? (
           <div className="block">
             <h4>Examination</h4>
             <div className="tags">
@@ -429,7 +521,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.diagnoses.length ? (
+        {isPrescription && form.diagnoses.length ? (
           <div className="block">
             <h4>Diagnoses</h4>
             <div className="tags">
@@ -440,7 +532,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.medicines.length ? (
+        {isPrescription && form.medicines.length ? (
           <div className="block">
             <h4>Medicines</h4>
             <table className="table table--compact">
@@ -462,7 +554,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.investigationsAdvised.length ? (
+        {isPrescription && form.investigationsAdvised.length ? (
           <div className="block">
             <h4>Investigations advised</h4>
             <div className="tags">
@@ -473,7 +565,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.advice.length ? (
+        {isPrescription && form.advice.length ? (
           <div className="block">
             <h4>Advice</h4>
             <div className="tags">
@@ -484,7 +576,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.labResults.length ? (
+        {isReport && form.labResults.length ? (
           <div className="block">
             <h4>Lab results</h4>
             <table className="table table--compact">
@@ -508,7 +600,7 @@ export default function ReviewPage() {
           </div>
         ) : null}
 
-        {form.radiology.examination || form.radiology.impression || form.radiology.observations.length ? (
+        {isReport && (form.radiology.examination || form.radiology.impression || form.radiology.observations.length) ? (
           <div className="block">
             <h4>Radiology</h4>
             {form.radiology.examination ? <p><strong>Examination:</strong> {form.radiology.examination}</p> : null}
@@ -599,39 +691,46 @@ export default function ReviewPage() {
             </label>
           </section>
 
-          <section className="card">
-            <h2 className="card__title">Report details</h2>
-            <div className="field-row">
-              <Field label="Report ID" value={form.report.reportId} onChange={(e) => patch('report', 'reportId', e.target.value)} disabled={verified} />
-              <Field label="Received on" value={form.report.receivedOn} onChange={(e) => patch('report', 'receivedOn', e.target.value)} disabled={verified} />
-              <Field label="Reported on" value={form.report.reportedOn} onChange={(e) => patch('report', 'reportedOn', e.target.value)} disabled={verified} />
-              <Field label="Report date" value={form.report.reportDate} onChange={(e) => patch('report', 'reportDate', e.target.value)} disabled={verified} />
-              <Field label="Signed by" value={form.report.signedBy} onChange={(e) => patch('report', 'signedBy', e.target.value)} disabled={verified} />
-              <Field label="Signed by designation" value={form.report.signedByDesignation} onChange={(e) => patch('report', 'signedByDesignation', e.target.value)} disabled={verified} />
-              <Field label="Technician" value={form.report.technician} onChange={(e) => patch('report', 'technician', e.target.value)} disabled={verified} />
-            </div>
-          </section>
+          {isReport ? (
+            <section className="card">
+              <h2 className="card__title">Report details</h2>
+              <div className="field-row">
+                <Field label="Report ID" value={form.report.reportId} onChange={(e) => patch('report', 'reportId', e.target.value)} disabled={verified} />
+                <Field label="Received on" value={form.report.receivedOn} onChange={(e) => patch('report', 'receivedOn', e.target.value)} disabled={verified} />
+                <Field label="Reported on" value={form.report.reportedOn} onChange={(e) => patch('report', 'reportedOn', e.target.value)} disabled={verified} />
+                <Field label="Report date" value={form.report.reportDate} onChange={(e) => patch('report', 'reportDate', e.target.value)} disabled={verified} />
+                <Field label="Signed by" value={form.report.signedBy} onChange={(e) => patch('report', 'signedBy', e.target.value)} disabled={verified} />
+                <Field label="Signed by designation" value={form.report.signedByDesignation} onChange={(e) => patch('report', 'signedByDesignation', e.target.value)} disabled={verified} />
+                <Field label="Technician" value={form.report.technician} onChange={(e) => patch('report', 'technician', e.target.value)} disabled={verified} />
+              </div>
+            </section>
+          ) : null}
 
-          <ListEditor
-            title="Chief complaints"
-            items={form.chiefComplaints}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('chiefComplaints', i, v)}
-            onAdd={() => addToList('chiefComplaints', '')}
-            onRemove={(i) => removeFromList('chiefComplaints', i)}
-            placeholder="e.g. Fever x 3 days"
-          />
+          {isPrescription ? (
+            <ListEditor
+              title="Chief complaints"
+              items={form.chiefComplaints}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('chiefComplaints', i, v)}
+              onAdd={() => addToList('chiefComplaints', '')}
+              onRemove={(i) => removeFromList('chiefComplaints', i)}
+              placeholder="e.g. Fever x 3 days"
+            />
+          ) : null}
 
-          <ListEditor
-            title="Examination"
-            items={form.examination}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('examination', i, v)}
-            onAdd={() => addToList('examination', '')}
-            onRemove={(i) => removeFromList('examination', i)}
-            placeholder="O/E finding"
-          />
+          {isPrescription ? (
+            <ListEditor
+              title="Examination"
+              items={form.examination}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('examination', i, v)}
+              onAdd={() => addToList('examination', '')}
+              onRemove={(i) => removeFromList('examination', i)}
+              placeholder="O/E finding"
+            />
+          ) : null}
 
+          {isPrescription && form.diagnoses.length > 0 ? (
           <section className="card">
             <div className="card__head">
               <h2 className="card__title">Diagnoses</h2>
@@ -641,7 +740,6 @@ export default function ReviewPage() {
                 </button>
               ) : null}
             </div>
-            {form.diagnoses.length === 0 ? <p className="muted">None captured.</p> : null}
             {form.diagnoses.map((value, index) => (
               <div className="repeat-row" key={`dx-${index}`}>
                 <input
@@ -656,7 +754,9 @@ export default function ReviewPage() {
               </div>
             ))}
           </section>
+          ) : null}
 
+          {isPrescription && form.medicines.length > 0 ? (
           <section className="card">
             <div className="card__head">
               <h2 className="card__title">Medicines</h2>
@@ -670,7 +770,6 @@ export default function ReviewPage() {
                 </button>
               ) : null}
             </div>
-            {form.medicines.length === 0 ? <p className="muted">None captured.</p> : null}
             {form.medicines.map((medicine, index) => (
               <div className="repeat-card" key={`med-${index}`}>
                 <div className="field-row">
@@ -688,27 +787,33 @@ export default function ReviewPage() {
               </div>
             ))}
           </section>
+          ) : null}
 
-          <ListEditor
-            title="Investigations advised"
-            items={form.investigationsAdvised}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('investigationsAdvised', i, v)}
-            onAdd={() => addToList('investigationsAdvised', '')}
-            onRemove={(i) => removeFromList('investigationsAdvised', i)}
-            placeholder="e.g. CBC"
-          />
+          {isPrescription ? (
+            <ListEditor
+              title="Investigations advised"
+              items={form.investigationsAdvised}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('investigationsAdvised', i, v)}
+              onAdd={() => addToList('investigationsAdvised', '')}
+              onRemove={(i) => removeFromList('investigationsAdvised', i)}
+              placeholder="e.g. CBC"
+            />
+          ) : null}
 
-          <ListEditor
-            title="Advice"
-            items={form.advice}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('advice', i, v)}
-            onAdd={() => addToList('advice', '')}
-            onRemove={(i) => removeFromList('advice', i)}
-            placeholder="Advice line"
-          />
+          {isPrescription ? (
+            <ListEditor
+              title="Advice"
+              items={form.advice}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('advice', i, v)}
+              onAdd={() => addToList('advice', '')}
+              onRemove={(i) => removeFromList('advice', i)}
+              placeholder="Advice line"
+            />
+          ) : null}
 
+          {isReport && form.labResults.length > 0 ? (
           <section className="card">
             <div className="card__head">
               <h2 className="card__title">Lab results</h2>
@@ -722,7 +827,6 @@ export default function ReviewPage() {
                 </button>
               ) : null}
             </div>
-            {form.labResults.length === 0 ? <p className="muted">None captured.</p> : null}
             {form.labResults.map((lab, index) => (
               <div className="repeat-card" key={`lab-${index}`}>
                 <div className="field-row">
@@ -751,53 +855,63 @@ export default function ReviewPage() {
               </div>
             ))}
           </section>
+          ) : null}
 
+          {isReport && (form.radiology.examination || form.radiology.protocol || form.radiology.observations.length || form.radiology.impression) ? (
           <section className="card">
             <h2 className="card__title">Radiology</h2>
             <div className="field-row">
               <Field label="Examination" value={form.radiology.examination} onChange={(e) => patch('radiology', 'examination', e.target.value)} disabled={verified} />
               <Field label="Protocol" value={form.radiology.protocol} onChange={(e) => patch('radiology', 'protocol', e.target.value)} disabled={verified} />
             </div>
-            <div className="card__head">
-              <h3 className="card__title">Observations</h3>
-              {!verified ? (
-                <button type="button" className="btn btn--ghost btn--sm" onClick={addRadiologyObs}>+ Add</button>
-              ) : null}
-            </div>
-            {form.radiology.observations.length === 0 ? <p className="muted">None captured.</p> : null}
-            {form.radiology.observations.map((value, index) => (
-              <div className="repeat-row" key={`rad-obs-${index}`}>
-                <input value={value} onChange={(e) => patchRadiologyObs(index, e.target.value)} disabled={verified} placeholder="Observation line" />
-                {!verified ? (
-                  <button type="button" className="icon-btn" onClick={() => removeRadiologyObs(index)} aria-label="Remove observation">×</button>
-                ) : null}
-              </div>
-            ))}
+            {form.radiology.observations.length > 0 ? (
+              <>
+                <div className="card__head">
+                  <h3 className="card__title">Observations</h3>
+                  {!verified ? (
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={addRadiologyObs}>+ Add</button>
+                  ) : null}
+                </div>
+                {form.radiology.observations.map((value, index) => (
+                  <div className="repeat-row" key={`rad-obs-${index}`}>
+                    <input value={value} onChange={(e) => patchRadiologyObs(index, e.target.value)} disabled={verified} placeholder="Observation line" />
+                    {!verified ? (
+                      <button type="button" className="icon-btn" onClick={() => removeRadiologyObs(index)} aria-label="Remove observation">×</button>
+                    ) : null}
+                  </div>
+                ))}
+              </>
+            ) : null}
             <label className="field field--wide">
               <span>Impression</span>
               <textarea rows={3} value={form.radiology.impression} onChange={(e) => patch('radiology', 'impression', e.target.value)} disabled={verified} />
             </label>
           </section>
+          ) : null}
 
-          <ListEditor
-            title="Abnormal findings"
-            items={form.abnormalFindings}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('abnormalFindings', i, v)}
-            onAdd={() => addToList('abnormalFindings', '')}
-            onRemove={(i) => removeFromList('abnormalFindings', i)}
-            placeholder="e.g. Haemoglobin 9.2 gm/dl (L)"
-          />
+          {isReport ? (
+            <ListEditor
+              title="Abnormal findings"
+              items={form.abnormalFindings}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('abnormalFindings', i, v)}
+              onAdd={() => addToList('abnormalFindings', '')}
+              onRemove={(i) => removeFromList('abnormalFindings', i)}
+              placeholder="e.g. Haemoglobin 9.2 gm/dl (L)"
+            />
+          ) : null}
 
-          <ListEditor
-            title="Warnings"
-            items={form.warnings}
-            verified={verified}
-            onPatch={(i, v) => patchStringList('warnings', i, v)}
-            onAdd={() => addToList('warnings', '')}
-            onRemove={(i) => removeFromList('warnings', i)}
-            placeholder="e.g. Name on report does not match patient"
-          />
+          {isReport ? (
+            <ListEditor
+              title="Warnings"
+              items={form.warnings}
+              verified={verified}
+              onPatch={(i, v) => patchStringList('warnings', i, v)}
+              onAdd={() => addToList('warnings', '')}
+              onRemove={(i) => removeFromList('warnings', i)}
+              placeholder="e.g. Name on report does not match patient"
+            />
+          ) : null}
 
           <section className="card">
             <h2 className="card__title">Document</h2>

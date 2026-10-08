@@ -87,7 +87,7 @@ export default function PatientsPage() {
                     <div className="table__patient">
                       <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
                       <div>
-                        <Link to={`/patients/${patient.id}`} className="table__link">{patient.name}</Link>
+                        <Link to={`/patients/${patient.id}`} className="table__link btn btn--ghost btn--sm">{patient.name}</Link>
                         {patient.address ? <div className="muted small">{patient.address}</div> : null}
                       </div>
                     </div>

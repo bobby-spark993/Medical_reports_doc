@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
+import { cardIn, fadeUp, formContainer, fieldItem, pressable } from '../lib/motion'
 import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
+import AuthScene from '../components/AuthScene'
+import Footer from '../components/Footer'
 
 export default function ResetPasswordPage() {
   const { user, loading, resetPassword } = useAuth()
@@ -45,15 +49,29 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="auth">
-      <div className="auth__card">
-        <div className="auth__brand">
+      <AuthScene variant="reset" />
+      <motion.div
+        className="auth__card"
+        variants={cardIn}
+        initial="hidden"
+        animate="show"
+        style={{ transformPerspective: 1000 }}
+      >
+        <motion.div className="auth__brand" {...fadeUp(0.05)}>
           <BrandMark size="lg" />
           <h1>Set a new password</h1>
           <p>Enter the OTP sent to your inbox and choose a new password.</p>
-        </div>
+        </motion.div>
 
-        <form className="auth__form" onSubmit={handleSubmit} noValidate>
-          <label className="field">
+        <motion.form
+          className="auth__form"
+          onSubmit={handleSubmit}
+          noValidate
+          variants={formContainer}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.label className="field" variants={fieldItem}>
             <span>Email</span>
             <input
               type="email"
@@ -64,9 +82,9 @@ export default function ResetPasswordPage() {
               placeholder="you@clinic.com"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>One-time code (OTP)</span>
             <input
               type="text"
@@ -79,9 +97,9 @@ export default function ResetPasswordPage() {
               maxLength={6}
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>New password</span>
             <input
               type="password"
@@ -92,9 +110,9 @@ export default function ResetPasswordPage() {
               placeholder="At least 8 characters"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Confirm new password</span>
             <input
               type="password"
@@ -105,7 +123,7 @@ export default function ResetPasswordPage() {
               placeholder="••••••••"
               required
             />
-          </label>
+          </motion.label>
 
           {error ? (
             <p className="form-error" role="alert">
@@ -113,16 +131,23 @@ export default function ResetPasswordPage() {
             </p>
           ) : null}
 
-          <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+          <motion.button
+            type="submit"
+            className="btn btn--primary btn--block"
+            disabled={submitting}
+            variants={fieldItem}
+            {...pressable}
+          >
             {submitting ? 'Resetting…' : 'Reset password'}
-          </button>
-        </form>
+          </motion.button>
+        </motion.form>
 
         <p className="auth__hint">
-          <Link to="/forgot-password">Request a new code</Link> ·{' '}
-          <Link to="/login">Back to sign in</Link>
+          <Link to="/forgot-password" className="btn btn--ghost btn--sm">Request a new code</Link>{' '}
+          <Link to="/login" className="btn btn--ghost btn--sm">Back to sign in</Link>
         </p>
-      </div>
+      </motion.div>
+      <Footer />
     </div>
   )
 }

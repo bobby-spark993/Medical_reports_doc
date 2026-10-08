@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
+import { cardIn, fadeUp, formContainer, fieldItem, pressable } from '../lib/motion'
 import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
+import AuthScene from '../components/AuthScene'
+import Footer from '../components/Footer'
 
 export default function ForgotPasswordPage() {
   const { user, loading, requestPasswordReset } = useAuth()
@@ -39,16 +43,23 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth__card">
-        <div className="auth__brand">
+    <div className="auth auth--forgot">
+      <AuthScene variant="forgot" />
+      <motion.div
+        className="auth__card"
+        variants={cardIn}
+        initial="hidden"
+        animate="show"
+        style={{ transformPerspective: 1000 }}
+      >
+        <motion.div className="auth__brand" {...fadeUp(0.05)}>
           <BrandMark size="lg" />
           <h1>Reset your password</h1>
           <p>Enter your account email and we will issue a one-time code.</p>
-        </div>
+        </motion.div>
 
         {sent ? (
-          <>
+          <motion.div {...fadeUp(0.12)}>
             <div className="banner banner--info">
               If that email is registered, a 6-digit OTP has been sent to its
               inbox. Use it on the next screen to set a new password.
@@ -59,12 +70,19 @@ export default function ForgotPasswordPage() {
               </Link>
             </div>
             <p className="auth__hint">
-              <Link to="/login">Back to sign in</Link>
+              <Link to="/login" className="btn btn--ghost btn--sm">Back to sign in</Link>
             </p>
-          </>
+          </motion.div>
         ) : (
-          <form className="auth__form" onSubmit={handleSubmit} noValidate>
-            <label className="field">
+          <motion.form
+            className="auth__form"
+            onSubmit={handleSubmit}
+            noValidate
+            variants={formContainer}
+            initial="hidden"
+            animate="show"
+          >
+            <motion.label className="field" variants={fieldItem}>
               <span>Email</span>
               <input
                 type="email"
@@ -75,7 +93,7 @@ export default function ForgotPasswordPage() {
                 placeholder="you@clinic.com"
                 required
               />
-            </label>
+            </motion.label>
 
             {error ? (
               <p className="form-error" role="alert">
@@ -83,16 +101,23 @@ export default function ForgotPasswordPage() {
               </p>
             ) : null}
 
-            <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+            <motion.button
+              type="submit"
+              className="btn btn--primary btn--block"
+              disabled={submitting}
+              variants={fieldItem}
+              {...pressable}
+            >
               {submitting ? 'Requesting…' : 'Request OTP'}
-            </button>
-          </form>
+            </motion.button>
+          </motion.form>
         )}
 
         <p className="auth__hint">
-          <Link to="/login">Back to sign in</Link>
+          <Link to="/login" className="btn btn--ghost btn--sm">Back to sign in</Link>
         </p>
-      </div>
+      </motion.div>
+      <Footer />
     </div>
   )
 }

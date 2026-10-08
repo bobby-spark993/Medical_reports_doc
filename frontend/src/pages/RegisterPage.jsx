@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
+import { cardIn, fadeUp, formContainer, fieldItem, pressable } from '../lib/motion'
 import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
+import AuthScene from '../components/AuthScene'
+import Footer from '../components/Footer'
 
 const ROLES = [
   { value: 'receptionist', label: 'Receptionist' },
@@ -52,16 +56,30 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth__card">
-        <div className="auth__brand">
+    <div className="auth auth--register">
+      <AuthScene variant="register" />
+      <motion.div
+        className="auth__card"
+        variants={cardIn}
+        initial="hidden"
+        animate="show"
+        style={{ transformPerspective: 1000 }}
+      >
+        <motion.div className="auth__brand" {...fadeUp(0.05)}>
           <BrandMark size="lg" />
           <h1>Create an account</h1>
           <p>Register as clinic staff to digitise prescriptions and manage patient records.</p>
-        </div>
+        </motion.div>
 
-        <form className="auth__form" onSubmit={handleSubmit} noValidate>
-          <label className="field">
+        <motion.form
+          className="auth__form"
+          onSubmit={handleSubmit}
+          noValidate
+          variants={formContainer}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.label className="field" variants={fieldItem}>
             <span>Full name</span>
             <input
               type="text"
@@ -72,9 +90,9 @@ export default function RegisterPage() {
               placeholder="e.g. Dr. Ramesh Kumar"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Email</span>
             <input
               type="email"
@@ -85,18 +103,18 @@ export default function RegisterPage() {
               placeholder="you@clinic.com"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Role</span>
             <select value={role} onChange={(e) => setRole(e.target.value)}>
               {ROLES.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Password</span>
             <input
               type="password"
@@ -107,9 +125,9 @@ export default function RegisterPage() {
               placeholder="At least 8 characters"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Confirm password</span>
             <input
               type="password"
@@ -120,7 +138,7 @@ export default function RegisterPage() {
               placeholder="••••••••"
               required
             />
-          </label>
+          </motion.label>
 
           {error ? (
             <p className="form-error" role="alert">
@@ -128,15 +146,22 @@ export default function RegisterPage() {
             </p>
           ) : null}
 
-          <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+          <motion.button
+            type="submit"
+            className="btn btn--primary btn--block"
+            disabled={submitting}
+            variants={fieldItem}
+            {...pressable}
+          >
             {submitting ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
+          </motion.button>
+        </motion.form>
 
         <p className="auth__hint">
-          Already have an account? <Link to="/login">Sign in</Link>
+          Already have an account? <Link to="/login" className="btn btn--ghost btn--sm">Sign in</Link>
         </p>
-      </div>
+      </motion.div>
+      <Footer />
     </div>
   )
 }

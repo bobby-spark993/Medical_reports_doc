@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
 import { initials, titleCase } from '../lib/format'
 import BrandMark from './BrandMark'
+import RouteTransition from './RouteTransition'
+import Footer from './Footer'
 
 const NAV = [
   { to: '/', label: 'Dashboard', end: true, icon: 'M3 11.5 12 4l9 7.5M5.5 10v9h13v-9' },
@@ -27,6 +30,44 @@ function Icon({ path }) {
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={path} />
     </svg>
+  )
+}
+
+const MotionNavLink = motion.create(NavLink)
+
+function NavItem({ item, collapsed }) {
+  const { pathname } = useLocation()
+  const active = item.end
+    ? pathname === item.to
+    : pathname === item.to || pathname.startsWith(`${item.to}/`)
+
+  return (
+    <MotionNavLink
+      to={item.to}
+      end={item.end}
+      title={item.label}
+      className={({ isActive }) => `nav-item${isActive ? ' nav-item--active' : ''}`}
+      whileHover={{ x: 2 }}
+      whileTap={{ scale: 0.98 }}
+    >
+      {active ? (
+        <motion.i layoutId="nav-active-glow" className="nav-item__glow" aria-hidden="true" />
+      ) : null}
+      <Icon path={item.icon} />
+      <AnimatePresence initial={false}>
+        {collapsed ? null : (
+          <motion.span
+            key="label"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            {item.label}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </MotionNavLink>
   )
 }
 
@@ -71,16 +112,7 @@ export default function AppLayout() {
 
         <nav className="sidebar__nav">
           {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              title={item.label}
-              className={({ isActive }) => `nav-item${isActive ? ' nav-item--active' : ''}`}
-            >
-              <Icon path={item.icon} />
-              <span>{item.label}</span>
-            </NavLink>
+            <NavItem key={item.to} item={item} collapsed={collapsed} />
           ))}
         </nav>
 
@@ -111,7 +143,8 @@ export default function AppLayout() {
       </aside>
 
       <main className="content">
-        <Outlet />
+        <RouteTransition />
+        <Footer />
       </main>
     </div>
   )

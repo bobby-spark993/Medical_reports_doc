@@ -102,6 +102,10 @@ class MedicalDocumentFlowIntegrationTest {
 		when(gemini.extractMedicalDocument(any(byte[].class), anyString()))
 				.thenReturn(labReportExtraction());
 
+		// Count committed rows before the scan: a scan must add none. Comparing
+		// to "before" (not to zero) keeps this robust on a non-empty dev database.
+		long patientsBefore = patientRepository.count();
+
 		ScanResponse response = documentService.scan(List.of(upload()), 1L);
 
 		assertThat(response.ok()).isTrue();
@@ -115,7 +119,7 @@ class MedicalDocumentFlowIntegrationTest {
 		assertThat(item.extracted().results()).hasSize(5);
 
 		// Nothing is persisted by a scan.
-		assertThat(patientRepository.count()).isZero();
+		assertThat(patientRepository.count()).isEqualTo(patientsBefore);
 	}
 
 	@Test

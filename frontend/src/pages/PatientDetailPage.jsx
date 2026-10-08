@@ -1,13 +1,36 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { API_BASE, get } from '../lib/api'
+import { API_BASE, del, get } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatDate, formatDateTime, formatDay, formatTime, formatValue, titleCase } from '../lib/format'
 import ErrorBanner from '../components/ErrorBanner'
 import Loading from '../components/Loading'
 import FolderIcon from '../components/FolderIcon'
 
-function VisitCard({ visit, canReport }) {
+// The printed time on a document ("10:30 AM") as minutes past midnight.
+function timeToMinutes(raw) {
+  if (!raw) return 0
+  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)?/i.exec(raw)
+  if (!match) return 0
+  let hours = Number(match[1])
+  const minutes = Number(match[2])
+  const meridiem = (match[3] || '').toUpperCase()
+  if (meridiem === 'PM' && hours !== 12) hours += 12
+  if (meridiem === 'AM' && hours === 12) hours = 0
+  return hours * 60 + minutes
+}
+
+// A document's own date/time (prescription = appointment date, report =
+// received-on). Scan time is only a last resort when the document has no date.
+function documentTime(visit) {
+  if (visit.visitDate) {
+    const base = new Date(`${visit.visitDate}T00:00:00`).getTime()
+    if (!Number.isNaN(base)) return base + timeToMinutes(visit.visitTime) * 60000
+  }
+  return visit.createdAt ? new Date(visit.createdAt).getTime() : 0
+}
+
+function VisitCard({ visit, canReport, onDelete, deleting }) {
   const [open, setOpen] = useState(true)
   const scanUrl = visit.hasScan ? `${API_BASE}/api/files/${visit.id}` : null
 
@@ -31,7 +54,6 @@ function VisitCard({ visit, canReport }) {
             <div><dt>Appointment no.</dt><dd>{formatValue(visit.appointmentNo)}</dd></div>
             <div><dt>Mode</dt><dd>{formatValue(visit.mode)}</dd></div>
             <div><dt>Valid up to</dt><dd>{formatValue(visit.validUpTo && formatDate(visit.validUpTo))}</dd></div>
-            <div><dt>Recorded</dt><dd>{formatDateTime(visit.createdAt)}</dd></div>
           </dl>
 
           {visit.notes ? (
@@ -94,6 +116,7 @@ function VisitCard({ visit, canReport }) {
           ) : null}
 
           <div className="visit__actions">
+            <Link to={`/documents/${visit.id}`} className="btn btn--primary btn--sm">Open document</Link>
             {scanUrl ? (
               <a className="btn btn--ghost btn--sm" href={scanUrl} target="_blank" rel="noreferrer">View scan</a>
             ) : null}
@@ -101,6 +124,16 @@ function VisitCard({ visit, canReport }) {
               <a className="btn btn--ghost btn--sm" href={`${API_BASE}/api/patients/${visit.patientId}/report`} target="_blank" rel="noreferrer">
                 Report PDF
               </a>
+            ) : null}
+            {onDelete ? (
+              <button
+                type="button"
+                className="btn btn--danger btn--sm"
+                onClick={() => onDelete(visit)}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
             ) : null}
           </div>
         </div>
@@ -115,12 +148,15 @@ export default function PatientDetailPage() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [reload, setReload] = useState(0)
+  const [deletingId, setDeletingId] = useState(null)
 
   const canReport = user?.role === 'admin' || user?.role === 'doctor'
 
   useEffect(() => {
     let active = true
     setLoading(true)
+    setError(null)
     get(`/api/patients/${id}`)
       .then((res) => active && setData(res))
       .catch((err) => active && setError(err))
@@ -128,7 +164,24 @@ export default function PatientDetailPage() {
     return () => {
       active = false
     }
-  }, [id])
+  }, [id, reload])
+
+  async function handleDelete(visit) {
+    const label = visit.visitDate ? formatDate(visit.visitDate) : `#${visit.id}`
+    if (!window.confirm(`Delete the document dated ${label}? This cannot be undone.`)) {
+      return
+    }
+    setDeletingId(visit.id)
+    setError(null)
+    try {
+      await del(`/api/prescriptions/${visit.id}`)
+      setReload((n) => n + 1)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   if (loading) return <Loading fullscreen label="Loading patient…" />
   if (!data) {
@@ -142,7 +195,10 @@ export default function PatientDetailPage() {
 
   const { patient, visits = [], appointments = [], followUps = [] } = data
 
-  // Newest first, by document date (falling back to when it was scanned).
+  // Newest first, by each document's own date/time — never by scan time.
+  const orderedVisits = [...visits].sort((a, b) => documentTime(b) - documentTime(a))
+
+  // Newest first, by the document date (falling back to when it was recorded).
   const docTime = (doc) => {
     const raw = doc.documentDate || doc.createdAt
     const time = raw ? new Date(raw).getTime() : 0
@@ -154,7 +210,7 @@ export default function PatientDetailPage() {
     <div className="page">
       <header className="page__head">
         <div>
-          <Link to="/patients" className="back-link">← Back to patients</Link>
+          <Link to="/patients" className="back-link btn btn--ghost btn--sm">← Back to patients</Link>
           <h1>{patient.name}</h1>
           <p className="muted">
             {[patient.pid && `ID ${patient.pid}`, patient.age, patient.gender && titleCase(patient.gender), patient.phone]
@@ -244,15 +300,21 @@ export default function PatientDetailPage() {
       </div>
 
       <section className="card">
-        <h2 className="card__title">Visit history ({visits.length})</h2>
-        {visits.length ? (
+        <h2 className="card__title">Documents by date ({orderedVisits.length})</h2>
+        {orderedVisits.length ? (
           <div className="visits">
-            {visits.map((visit) => (
-              <VisitCard key={visit.id} visit={visit} canReport={canReport} />
+            {orderedVisits.map((visit) => (
+              <VisitCard
+                key={visit.id}
+                visit={visit}
+                canReport={canReport}
+                onDelete={handleDelete}
+                deleting={deletingId === visit.id}
+              />
             ))}
           </div>
         ) : (
-          <p className="muted">No visits yet.</p>
+          <p className="muted">No documents yet.</p>
         )}
       </section>
 
@@ -274,7 +336,7 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
                 <div className="list__right">
-                  <span className="muted small">{formatDateTime(doc.createdAt)}</span>
+                  {doc.documentDate ? <span className="muted small">{formatDate(doc.documentDate)}</span> : null}
                   <a className="btn btn--ghost btn--sm" href={`${API_BASE}/api/documents/${doc.id}/file`} target="_blank" rel="noreferrer">
                     View
                   </a>

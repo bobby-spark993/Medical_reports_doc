@@ -30,7 +30,9 @@ import jakarta.persistence.Table;
 		@Index(name = "visits_doctor_idx", columnList = "doctor_id"),
 		@Index(name = "visits_is_verified_idx", columnList = "is_verified"),
 		@Index(name = "visits_visit_date_idx", columnList = "visit_date"),
-		@Index(name = "visits_follow_up_date_idx", columnList = "follow_up_date")
+		@Index(name = "visits_follow_up_date_idx", columnList = "follow_up_date"),
+		@Index(name = "visits_patient_verified_visit_date_idx", columnList = "patient_id,is_verified,visit_date"),
+		@Index(name = "visits_verified_follow_up_idx", columnList = "is_verified,follow_up_date")
 })
 public class Visit extends BaseEntity {
 

@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
+import { cardIn, fadeUp, formContainer, fieldItem, pressable } from '../lib/motion'
 import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
+import AuthScene from '../components/AuthScene'
+import Footer from '../components/Footer'
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth()
@@ -33,16 +37,30 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth">
-      <div className="auth__card">
-        <div className="auth__brand">
+    <div className="auth auth--login">
+      <AuthScene variant="login" />
+      <motion.div
+        className="auth__card"
+        variants={cardIn}
+        initial="hidden"
+        animate="show"
+        style={{ transformPerspective: 1000 }}
+      >
+        <motion.div className="auth__brand" {...fadeUp(0.05)}>
           <BrandMark size="lg" />
           <h1>Prescription Scanner</h1>
           <p>Sign in to digitise prescriptions and manage patient records.</p>
-        </div>
+        </motion.div>
 
-        <form className="auth__form" onSubmit={handleSubmit} noValidate>
-          <label className="field">
+        <motion.form
+          className="auth__form"
+          onSubmit={handleSubmit}
+          noValidate
+          variants={formContainer}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.label className="field" variants={fieldItem}>
             <span>Email</span>
             <input
               type="email"
@@ -53,9 +71,9 @@ export default function LoginPage() {
               placeholder="admin@prescriptionscanner.local"
               required
             />
-          </label>
+          </motion.label>
 
-          <label className="field">
+          <motion.label className="field" variants={fieldItem}>
             <span>Password</span>
             <input
               type="password"
@@ -66,7 +84,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               required
             />
-          </label>
+          </motion.label>
 
           {error ? (
             <p className="form-error" role="alert">
@@ -74,18 +92,25 @@ export default function LoginPage() {
             </p>
           ) : null}
 
-          <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
+          <motion.button
+            type="submit"
+            className="btn btn--primary btn--block"
+            disabled={submitting}
+            variants={fieldItem}
+            {...pressable}
+          >
             {submitting ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
+          </motion.button>
+        </motion.form>
 
         <p className="auth__hint">
-          New here? <Link to="/register">Create an account</Link>
+          New here? <Link to="/register" className="btn btn--ghost btn--sm">Create an account</Link>
         </p>
         <p className="auth__forgot">
-          <Link to="/forgot-password">Forgot password?</Link>
+          <Link to="/forgot-password" className="btn btn--ghost btn--sm">Forgot password?</Link>
         </p>
-      </div>
+      </motion.div>
+      <Footer />
     </div>
   )
 }

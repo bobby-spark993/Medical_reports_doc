@@ -28,7 +28,8 @@ import jakarta.persistence.Table;
 @Table(name = "medical_documents", indexes = {
 		@Index(name = "medical_documents_patient_idx", columnList = "patient_id"),
 		@Index(name = "medical_documents_type_idx", columnList = "document_type"),
-		@Index(name = "medical_documents_lab_report_id_idx", columnList = "lab_report_id")
+		@Index(name = "medical_documents_lab_report_id_idx", columnList = "lab_report_id"),
+		@Index(name = "medical_documents_patient_date_idx", columnList = "patient_id,document_date")
 })
 public class MedicalDocument extends BaseEntity {
 

@@ -38,14 +38,20 @@ function saveBatchToSession(batchId, pages) {
       batchId,
       pages: pages
         .filter((page) => page.draftId)
-        .map((page) => ({
-          id: page.draftId,
-          page: page.page,
-          pageCount: page.pageCount,
-          documentType: page.documentType,
-          sourceName: page.sourceName,
-          name: page.extracted?.patient?.name || page.matchedPatient?.name || '',
-        })),
+        .map((page) => {
+          const info = page.extracted?.patient ?? {}
+          const match = page.matchedPatient ?? {}
+          return {
+            id: page.draftId,
+            page: page.page,
+            pageCount: page.pageCount,
+            documentType: page.documentType,
+            sourceName: page.sourceName,
+            name: match.name || info.name || '',
+            age: match.age || info.age || (info.age_years != null ? String(info.age_years) : ''),
+            gender: match.gender || info.gender || '',
+          }
+        }),
     }
     sessionStorage.setItem(`rx_batch_${batchId}`, JSON.stringify(record))
   } catch {
