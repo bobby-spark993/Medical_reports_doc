@@ -98,6 +98,7 @@ export default function DocumentDetailPage() {
   const { visit, patient } = draft
   const documentType = (form.documentType || '').trim().toUpperCase()
   const isPrescription = documentType !== 'LAB_REPORT' && documentType !== 'RADIOLOGY_REPORT'
+  const isReport = !isPrescription
   const typeLabel = isPrescription ? 'Prescription' : 'Report'
   const backTo = patient?.id ? `/patients/${patient.id}` : '/patients'
 

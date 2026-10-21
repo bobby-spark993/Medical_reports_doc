@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "motion": "^14.0.0"
   }
 }

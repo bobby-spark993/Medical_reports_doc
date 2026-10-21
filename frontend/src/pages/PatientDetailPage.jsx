@@ -5,7 +5,6 @@ import { useAuth } from '../lib/auth'
 import { formatDate, formatDateTime, formatDay, formatTime, formatValue, titleCase } from '../lib/format'
 import ErrorBanner from '../components/ErrorBanner'
 import Loading from '../components/Loading'
-import FolderIcon from '../components/FolderIcon'
 
 // The printed time on a document ("10:30 AM") as minutes past midnight.
 function timeToMinutes(raw) {
@@ -28,6 +27,110 @@ function documentTime(visit) {
     if (!Number.isNaN(base)) return base + timeToMinutes(visit.visitTime) * 60000
   }
   return visit.createdAt ? new Date(visit.createdAt).getTime() : 0
+}
+
+// Pull every dated event in a patient's record into one chronological list:
+// registration, each consultation, advised follow-ups, booked appointments
+// and received lab/radiology documents.
+function buildTimeline({ patient, visits, appointments, documents }) {
+  const events = []
+
+  const instant = (value) => {
+    if (!value) return null
+    const time = new Date(value).getTime()
+    return Number.isNaN(time) ? null : time
+  }
+  const dayStart = (value) => {
+    if (!value) return null
+    const time = new Date(`${value}T00:00:00`).getTime()
+    return Number.isNaN(time) ? null : time
+  }
+
+  // The record begins the moment the first document was scanned, so the
+  // timeline's origin is a "Document scan", not the patient's registration.
+  const scanTimes = [
+    ...visits.map((visit) => instant(visit.createdAt)),
+    ...documents.map((document) => instant(document.createdAt)),
+  ].filter(Boolean)
+  const firstScan = scanTimes.length ? Math.min(...scanTimes) : instant(patient.createdAt)
+
+  if (firstScan) {
+    events.push({
+      key: 'first-scan',
+      at: firstScan,
+      withTime: true,
+      kind: 'registered',
+      title: 'Document scan',
+      detail: ['First document scanned', patient.pid && `Patient ID ${patient.pid}`].filter(Boolean).join(' · '),
+    })
+  }
+
+  visits.forEach((visit) => {
+    events.push({
+      key: `visit-${visit.id}`,
+      at: documentTime(visit),
+      withTime: visit.visitDate ? Boolean(visit.visitTime) : true,
+      kind: 'visit',
+      title: 'Consultation',
+      detail: [
+        visit.doctor?.name,
+        visit.appointmentNo && `Appt no. ${visit.appointmentNo}`,
+        visit.mode && titleCase(visit.mode),
+        visit.diagnoses?.length ? `${visit.diagnoses.length} diagnosis recorded` : null,
+      ].filter(Boolean).join(' · '),
+      href: `/documents/${visit.id}`,
+      pill: visit.isVerified
+        ? { label: 'Verified', tone: 'ok' }
+        : { label: 'Draft', tone: 'warn' },
+      meta: [
+        visit.createdAt ? `Added ${formatDateTime(visit.createdAt)}` : null,
+        visit.updatedAt && visit.updatedAt !== visit.createdAt
+          ? `Last updated ${formatDateTime(visit.updatedAt)}`
+          : null,
+      ].filter(Boolean),
+    })
+
+    if (visit.followUpDate) {
+      events.push({
+        key: `followup-${visit.id}`,
+        at: dayStart(visit.followUpDate),
+        withTime: false,
+        kind: 'followup',
+        title: 'Follow-up advised',
+        detail: visit.visitDate ? `From the consultation on ${formatDate(visit.visitDate)}` : null,
+        pill: { label: 'Follow-up', tone: 'info' },
+      })
+    }
+  })
+
+  appointments.forEach((appointment) => {
+    events.push({
+      key: `appointment-${appointment.id}`,
+      at: instant(appointment.scheduledAt),
+      withTime: true,
+      kind: 'appointment',
+      title: appointment.isUpcoming ? 'Appointment booked' : 'Appointment',
+      detail: [appointment.doctorName, appointment.notes].filter(Boolean).join(' · '),
+      pill: appointment.isUpcoming
+        ? { label: 'Upcoming', tone: 'info' }
+        : { label: titleCase((appointment.status || 'scheduled').replace(/_/g, ' ')), tone: 'muted' },
+    })
+  })
+
+  documents.forEach((document) => {
+    events.push({
+      key: `document-${document.id}`,
+      at: dayStart(document.documentDate) ?? instant(document.createdAt),
+      withTime: !document.documentDate,
+      kind: 'document',
+      title: titleCase((document.documentType || 'Document').replace(/_/g, ' ')),
+      detail: [document.labName, document.labReportId].filter(Boolean).join(' · '),
+      href: `${API_BASE}/api/documents/${document.id}/file`,
+      external: true,
+    })
+  })
+
+  return events.filter((event) => event.at).sort((a, b) => a.at - b.at)
 }
 
 function VisitCard({ visit, canReport, onDelete, deleting }) {
@@ -206,6 +309,9 @@ export default function PatientDetailPage() {
   }
   const documents = [...(data.documents ?? [])].sort((a, b) => docTime(b) - docTime(a))
 
+  // One merged, newest-first timeline of everything that happened.
+  const history = buildTimeline({ patient, visits: orderedVisits, appointments, documents })
+
   return (
     <div className="page">
       <header className="page__head">
@@ -296,6 +402,42 @@ export default function PatientDetailPage() {
               </ul>
             </>
           ) : null}
+
+          <h3 className="subheading">Full history · oldest first</h3>
+          {history.length ? (
+            <ol className="timeline">
+              {history.map((event) => (
+                <li key={event.key} className={`timeline__item timeline__item--${event.kind}`}>
+                  <span className="timeline__dot" aria-hidden="true" />
+                  <div className="timeline__body">
+                    <div className="timeline__head">
+                      <span className="timeline__title">{event.title}</span>
+                      {event.pill ? (
+                        <span className={`pill pill--${event.pill.tone}`}>{event.pill.label}</span>
+                      ) : null}
+                    </div>
+                    <div className="timeline__when">
+                      {formatDate(event.at)}
+                      {event.withTime ? ` · ${formatTime(event.at)}` : ''}
+                    </div>
+                    {event.detail ? <p className="timeline__detail">{event.detail}</p> : null}
+                    {event.meta?.length ? <p className="timeline__meta">{event.meta.join(' · ')}</p> : null}
+                    {event.href ? (
+                      event.external ? (
+                        <a className="timeline__link" href={event.href} target="_blank" rel="noreferrer">
+                          View document →
+                        </a>
+                      ) : (
+                        <Link className="timeline__link" to={event.href}>Open document →</Link>
+                      )
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">No history recorded.</p>
+          )}
         </section>
       </div>
 
@@ -313,37 +455,6 @@ export default function PatientDetailPage() {
               />
             ))}
           </div>
-        ) : (
-          <p className="muted">No documents yet.</p>
-        )}
-      </section>
-
-      <section className="card">
-        <h2 className="card__title">Documents ({documents.length})</h2>
-        {documents.length ? (
-          <ul className="list">
-            {documents.map((doc) => (
-              <li key={doc.id} className="list__item">
-                <div className="table__patient">
-                  <span className="table__folder" aria-hidden="true"><FolderIcon size={18} /></span>
-                  <div>
-                    <strong>{titleCase((doc.documentType || 'OTHER').replace('_', ' '))}</strong>
-                    <div className="muted small">
-                      {[doc.documentDate && formatDate(doc.documentDate), doc.labName, doc.labReportId]
-                        .filter(Boolean)
-                        .join(' · ') || 'No date reported'}
-                    </div>
-                  </div>
-                </div>
-                <div className="list__right">
-                  {doc.documentDate ? <span className="muted small">{formatDate(doc.documentDate)}</span> : null}
-                  <a className="btn btn--ghost btn--sm" href={`${API_BASE}/api/documents/${doc.id}/file`} target="_blank" rel="noreferrer">
-                    View
-                  </a>
-                </div>
-              </li>
-            ))}
-          </ul>
         ) : (
           <p className="muted">No documents yet.</p>
         )}

@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.openpdf.text.Document;
@@ -31,6 +32,9 @@ import com.prescriptionscanner.domain.LabResult;
 import com.prescriptionscanner.domain.Patient;
 import com.prescriptionscanner.domain.PrescribedMedicine;
 import com.prescriptionscanner.domain.Visit;
+import com.prescriptionscanner.dto.GeminiExtraction;
+
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Builds the patient report PDF (OpenPDF 3.x, whose packages moved from
@@ -67,9 +71,11 @@ public class ReportService {
 	private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
 	private final PatientService patientService;
+	private final ObjectMapper mapper;
 
-	public ReportService(PatientService patientService) {
+	public ReportService(PatientService patientService, ObjectMapper mapper) {
 		this.patientService = patientService;
+		this.mapper = mapper;
 	}
 
 	/** Runs inside a read-only transaction so lazy collections can be walked. */
@@ -127,41 +133,11 @@ public class ReportService {
 					labelValue(doc, "Notes", visit.getNotes());
 				}
 
-				if (!visit.getDiagnoses().isEmpty()) {
-					doc.add(new Paragraph("Diagnosis", SUBHEAD));
-					for (Diagnosis diagnosis : visit.getDiagnoses()) {
-						doc.add(new Paragraph("- " + diagnosis.getDescription(), VALUE));
-					}
-				}
-
-				if (!visit.getMedicines().isEmpty()) {
-					doc.add(new Paragraph("Prescription", SUBHEAD));
-					PdfPTable table = table(new float[] { 3.4f, 1.6f, 2.0f, 1.6f, 1.4f });
-					headerRow(table, "Medicine", "Dose", "Frequency", "Duration", "Instructions");
-					for (PrescribedMedicine medicine : visit.getMedicines()) {
-						row(table, CELL,
-								medicine.getName(),
-								orDash(medicine.getDose()),
-								orDash(medicine.getFrequency()),
-								orDash(medicine.getDuration()),
-								orDash(medicine.getInstructions()));
-					}
-					doc.add(table);
-				}
-
-				if (!visit.getLabResults().isEmpty()) {
-					doc.add(new Paragraph("Lab Results", SUBHEAD));
-					PdfPTable table = table(new float[] { 3.4f, 1.8f, 1.4f, 2.0f, 1.4f });
-					headerRow(table, "Test", "Value", "Unit", "Reference", "Flag");
-					for (LabResult lab : visit.getLabResults()) {
-						row(table, lab.isAbnormal() ? CELL_RED : CELL,
-								lab.getTestName(),
-								orDash(lab.getValue()),
-								orDash(lab.getUnit()),
-								orDash(lab.getReferenceRange()),
-								lab.isAbnormal() ? "ABNORMAL" : "");
-					}
-					doc.add(table);
+				GeminiExtraction extraction = extraction(visit);
+				if (extraction != null) {
+					renderExtraction(doc, extraction);
+				} else {
+					renderEntities(doc, visit);
 				}
 
 				horizontalRule(doc);
@@ -216,6 +192,211 @@ public class ReportService {
 		p.add(new Phrase(notBlank(value) ? value : "-", VALUE));
 		p.setSpacingAfter(2);
 		doc.add(p);
+	}
+
+	/**
+	 * The extraction stored on the visit. Prefers the reviewed JSON (what the user
+	 * confirmed); falls back to the raw AI JSON. Null when neither can be parsed,
+	 * in which case the relational columns are printed instead.
+	 */
+	private GeminiExtraction extraction(Visit visit) {
+		String json = notBlank(visit.getReviewedJson()) ? visit.getReviewedJson() : visit.getRawAiJson();
+		if (!notBlank(json)) {
+			return null;
+		}
+		try {
+			return mapper.readValue(json, GeminiExtraction.class).normalized();
+		} catch (Exception ex) {
+			log.warn("Could not parse the extraction for visit {}: {}", visit.getId(), ex.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Prints the full extracted document — the data parsed from the scan, never the
+	 * scan image itself. Mirrors the fields shown on the review/preview screen.
+	 */
+	private void renderExtraction(Document doc, GeminiExtraction e) throws DocumentException {
+		GeminiExtraction.Facility facility = e.facility();
+		if (facility != null && (notBlank(facility.name()) || notBlank(facility.address())
+				|| notBlank(facility.email()) || notBlank(facility.website())
+				|| hasItems(facility.phone()) || hasItems(facility.mobile()))) {
+			subheading(doc, "Facility");
+			labelValue(doc, "Name", facility.name());
+			labelValue(doc, "Address", facility.address());
+			List<String> phones = new ArrayList<>();
+			if (facility.phone() != null) {
+				phones.addAll(facility.phone());
+			}
+			if (facility.mobile() != null) {
+				phones.addAll(facility.mobile());
+			}
+			labelValue(doc, "Phone", joinList(phones));
+			labelValue(doc, "Email", facility.email());
+			labelValue(doc, "Website", facility.website());
+		}
+
+		GeminiExtraction.ReportInfo report = e.report();
+		if (report != null && (notBlank(report.reportId()) || notBlank(report.receivedOn())
+				|| notBlank(report.reportedOn()) || notBlank(report.reportDate())
+				|| notBlank(report.signedBy()) || notBlank(report.technician()))) {
+			subheading(doc, "Report Details");
+			labelValue(doc, "Report ID", report.reportId());
+			labelValue(doc, "Received on", report.receivedOn());
+			labelValue(doc, "Reported on", report.reportedOn());
+			labelValue(doc, "Report date", report.reportDate());
+			labelValue(doc, "Signed by", join(report.signedBy(), report.signedByDesignation()));
+			labelValue(doc, "Technician", report.technician());
+		}
+
+		stringSection(doc, "Chief Complaints", e.chiefComplaints());
+		stringSection(doc, "Examination", e.examination());
+
+		if (hasItems(e.diagnoses())) {
+			subheading(doc, "Diagnosis");
+			for (String diagnosis : e.diagnoses()) {
+				if (notBlank(diagnosis)) {
+					doc.add(new Paragraph("- " + diagnosis, VALUE));
+				}
+			}
+		}
+
+		if (hasItems(e.medicines())) {
+			subheading(doc, "Prescription");
+			PdfPTable table = table(new float[] { 3.4f, 1.6f, 2.0f, 1.6f, 1.4f });
+			headerRow(table, "Medicine", "Dose", "Frequency", "Duration", "Instructions");
+			for (GeminiExtraction.MedicineInfo medicine : e.medicines()) {
+				if (medicine == null) {
+					continue;
+				}
+				row(table, CELL,
+						medicine.name(),
+						orDash(medicine.dose()),
+						orDash(medicine.frequency()),
+						orDash(medicine.duration()),
+						orDash(medicine.instructions()));
+			}
+			doc.add(table);
+		}
+
+		stringSection(doc, "Investigations Advised", e.investigationsAdvised());
+		stringSection(doc, "Advice", e.advice());
+
+		if (hasItems(e.labResults())) {
+			subheading(doc, "Lab Results");
+			PdfPTable table = table(new float[] { 2.0f, 2.6f, 1.6f, 1.2f, 1.8f, 1.0f, 2.2f });
+			headerRow(table, "Group", "Test", "Value", "Unit", "Reference", "Flag", "Remark");
+			for (GeminiExtraction.LabResultInfo lab : e.labResults()) {
+				if (lab == null) {
+					continue;
+				}
+				boolean abnormal = Boolean.TRUE.equals(lab.abnormal());
+				row(table, abnormal ? CELL_RED : CELL,
+						orDash(lab.group()),
+						orDash(lab.test()),
+						orDash(lab.value()),
+						orDash(lab.unit()),
+						orDash(lab.referenceRange()),
+						orDash(lab.flag()),
+						orDash(lab.remark()));
+			}
+			doc.add(table);
+		}
+
+		GeminiExtraction.RadiologyInfo radiology = e.radiology();
+		if (radiology != null && (notBlank(radiology.examination()) || notBlank(radiology.protocol())
+				|| notBlank(radiology.impression()) || hasItems(radiology.observations()))) {
+			subheading(doc, "Radiology");
+			labelValue(doc, "Examination", radiology.examination());
+			labelValue(doc, "Protocol", radiology.protocol());
+			if (hasItems(radiology.observations())) {
+				for (String observation : radiology.observations()) {
+					if (notBlank(observation)) {
+						doc.add(new Paragraph("- " + observation, VALUE));
+					}
+				}
+			}
+			labelValue(doc, "Impression", radiology.impression());
+		}
+
+		stringSection(doc, "Abnormal Findings", e.abnormalFindings());
+		stringSection(doc, "Warnings", e.warnings());
+	}
+
+	/** Fallback for visits whose extraction JSON is unavailable: the relational columns. */
+	private void renderEntities(Document doc, Visit visit) throws DocumentException {
+		if (!visit.getDiagnoses().isEmpty()) {
+			subheading(doc, "Diagnosis");
+			for (Diagnosis diagnosis : visit.getDiagnoses()) {
+				doc.add(new Paragraph("- " + diagnosis.getDescription(), VALUE));
+			}
+		}
+
+		if (!visit.getMedicines().isEmpty()) {
+			subheading(doc, "Prescription");
+			PdfPTable table = table(new float[] { 3.4f, 1.6f, 2.0f, 1.6f, 1.4f });
+			headerRow(table, "Medicine", "Dose", "Frequency", "Duration", "Instructions");
+			for (PrescribedMedicine medicine : visit.getMedicines()) {
+				row(table, CELL,
+						medicine.getName(),
+						orDash(medicine.getDose()),
+						orDash(medicine.getFrequency()),
+						orDash(medicine.getDuration()),
+						orDash(medicine.getInstructions()));
+			}
+			doc.add(table);
+		}
+
+		if (!visit.getLabResults().isEmpty()) {
+			subheading(doc, "Lab Results");
+			PdfPTable table = table(new float[] { 3.4f, 1.8f, 1.4f, 2.0f, 1.4f });
+			headerRow(table, "Test", "Value", "Unit", "Reference", "Flag");
+			for (LabResult lab : visit.getLabResults()) {
+				row(table, lab.isAbnormal() ? CELL_RED : CELL,
+						lab.getTestName(),
+						orDash(lab.getValue()),
+						orDash(lab.getUnit()),
+						orDash(lab.getReferenceRange()),
+						lab.isAbnormal() ? "ABNORMAL" : "");
+			}
+			doc.add(table);
+		}
+	}
+
+	private void subheading(Document doc, String text) throws DocumentException {
+		Paragraph p = new Paragraph(text, SUBHEAD);
+		p.setSpacingBefore(6);
+		p.setSpacingAfter(2);
+		doc.add(p);
+	}
+
+	private void stringSection(Document doc, String title, List<String> items) throws DocumentException {
+		if (!hasItems(items)) {
+			return;
+		}
+		subheading(doc, title);
+		for (String item : items) {
+			if (notBlank(item)) {
+				doc.add(new Paragraph("- " + item, VALUE));
+			}
+		}
+	}
+
+	private static boolean hasItems(List<?> items) {
+		return items != null && !items.isEmpty();
+	}
+
+	private static String joinList(List<String> items) {
+		StringBuilder sb = new StringBuilder();
+		for (String item : items) {
+			if (notBlank(item)) {
+				if (!sb.isEmpty()) {
+					sb.append(", ");
+				}
+				sb.append(item);
+			}
+		}
+		return sb.isEmpty() ? "-" : sb.toString();
 	}
 
 	private void horizontalRule(Document doc) throws DocumentException {

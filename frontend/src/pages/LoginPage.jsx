@@ -7,6 +7,7 @@ import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
 import AuthScene from '../components/AuthScene'
 import Footer from '../components/Footer'
+import PasswordInput from '../components/PasswordInput'
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth()
@@ -75,8 +76,7 @@ export default function LoginPage() {
 
           <motion.label className="field" variants={fieldItem}>
             <span>Password</span>
-            <input
-              type="password"
+            <PasswordInput
               name="password"
               autoComplete="current-password"
               value={password}

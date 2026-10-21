@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { upload } from '../lib/api'
 import ErrorBanner from '../components/ErrorBanner'
 import FolderIcon from '../components/FolderIcon'
+import PulseLoader from '../components/PulseLoader'
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
 const MAX_MB = 20
@@ -63,6 +64,7 @@ export default function UploadPage() {
   const navigate = useNavigate()
   const inputRef = useRef(null)
   const batchRef = useRef(newBatchId())
+  const progressTimer = useRef(null)
 
   const [files, setFiles] = useState([])
   const [previews, setPreviews] = useState({})
@@ -75,6 +77,10 @@ export default function UploadPage() {
   const [contextPhone, setContextPhone] = useState('')
   const [contextPid, setContextPid] = useState('')
   const [error, setError] = useState(null)
+  const [progress, setProgress] = useState(null)
+
+  // Cancel the "hold at 100%" timer if the page unmounts mid-animation.
+  useEffect(() => () => clearTimeout(progressTimer.current), [])
 
   function patchPage(key, patch) {
     setPages((prev) => {
@@ -237,29 +243,48 @@ export default function UploadPage() {
     }
   }
 
-  async function scanAll() {
+  async function runBatch(entries, action, mode) {
+    if (!entries.length) return
+    clearTimeout(progressTimer.current)
     setBusy(true)
-    for (const entry of pages) {
-      if (entry.status === 'idle' || entry.status === 'error') {
-        await scanEntry(entry)
-      }
+    setProgress({ mode, done: 0, total: entries.length, complete: false })
+    let done = 0
+    for (const entry of entries) {
+      await action(entry)
+      done += 1
+      setProgress({ mode, done, total: entries.length, complete: false })
     }
     setBusy(false)
+    // Hold the finished bar at 100% so it visibly reaches the end, then hide it.
+    setProgress({ mode, done, total: entries.length, complete: true })
+    progressTimer.current = setTimeout(() => setProgress(null), 1400)
+  }
+
+  async function scanAll() {
+    await runBatch(
+      pages.filter((page) => page.status === 'idle' || page.status === 'error'),
+      scanEntry,
+      'scan',
+    )
   }
 
   async function saveAll() {
-    setBusy(true)
-    for (const entry of pages) {
-      if (entry.status === 'scanned') {
-        await saveEntry(entry)
-      }
-    }
-    setBusy(false)
+    await runBatch(
+      pages.filter((page) => page.status === 'scanned'),
+      saveEntry,
+      'save',
+    )
   }
 
   const scannedCount = pages.filter((page) => page.status === 'scanned').length
   const savedCount = pages.filter((page) => page.status === 'saved').length
   const totalPages = pages.length
+
+  const progressLabel = progress
+    ? progress.mode === 'scan'
+      ? (progress.complete ? 'Scan complete' : 'Scanning…')
+      : (progress.complete ? 'Save complete' : 'Saving…')
+    : ''
 
   return (
     <div className="page">
@@ -329,7 +354,7 @@ export default function UploadPage() {
             </ul>
           ) : null}
 
-          {preparing ? <p className="muted small">Reading page counts…</p> : null}
+          {preparing ? <PulseLoader label="Reading pages…" /> : null}
 
           {pages.length ? (
             <>
@@ -354,6 +379,8 @@ export default function UploadPage() {
                   Clear all
                 </button>
               </div>
+
+              {progress ? <PulseLoader label={progressLabel} /> : null}
 
               <div className="block">
                 <h4>
@@ -399,7 +426,7 @@ export default function UploadPage() {
                         </div>
                         <div className="list__right">
                           {entry.status === 'idle' || entry.status === 'error' ? (
-                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => scanEntry(entry)} disabled={busy}>
+                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => runBatch([entry], scanEntry, 'scan')} disabled={busy}>
                               Scan
                             </button>
                           ) : entry.status === 'scanning' ? (
@@ -412,7 +439,7 @@ export default function UploadPage() {
                               {entry.matchedPatient ? (
                                 <Link to={`/patients/${entry.matchedPatient.id}`} className="btn btn--ghost btn--sm">Folder</Link>
                               ) : null}
-                              <button type="button" className="btn btn--primary btn--sm" onClick={() => saveEntry(entry)} disabled={busy || !consent}>
+                              <button type="button" className="btn btn--primary btn--sm" onClick={() => runBatch([entry], saveEntry, 'save')} disabled={busy || !consent}>
                                 Save
                               </button>
                             </>

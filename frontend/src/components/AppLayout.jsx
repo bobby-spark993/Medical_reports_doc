@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useAuth } from '../lib/auth'
 import { initials, titleCase } from '../lib/format'
 import BrandMark from './BrandMark'
+import AuthScene from './AuthScene'
 import RouteTransition from './RouteTransition'
 import Footer from './Footer'
 
@@ -102,6 +103,7 @@ export default function AppLayout() {
   return (
     <div className={`shell${collapsed ? ' shell--collapsed' : ''}`}>
       <aside className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}`}>
+        <AuthScene variant="login" />
         <div className="sidebar__brand">
           <BrandMark />
           <div className="sidebar__brand-text">

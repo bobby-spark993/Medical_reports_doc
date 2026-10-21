@@ -7,6 +7,7 @@ import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
 import AuthScene from '../components/AuthScene'
 import Footer from '../components/Footer'
+import { saveResetEmail } from '../lib/passwordReset'
 
 export default function ForgotPasswordPage() {
   const { user, loading, requestPasswordReset } = useAuth()
@@ -34,6 +35,7 @@ export default function ForgotPasswordPage() {
     setSubmitting(true)
     try {
       await requestPasswordReset(value)
+      saveResetEmail(value)
       setSent(true)
     } catch (err) {
       setError(err.message || 'Request failed')

@@ -7,6 +7,7 @@ import Loading from '../components/Loading'
 import BrandMark from '../components/BrandMark'
 import AuthScene from '../components/AuthScene'
 import Footer from '../components/Footer'
+import PasswordInput from '../components/PasswordInput'
 
 const ROLES = [
   { value: 'receptionist', label: 'Receptionist' },
@@ -116,8 +117,7 @@ export default function RegisterPage() {
 
           <motion.label className="field" variants={fieldItem}>
             <span>Password</span>
-            <input
-              type="password"
+            <PasswordInput
               name="password"
               autoComplete="new-password"
               value={password}
@@ -129,8 +129,7 @@ export default function RegisterPage() {
 
           <motion.label className="field" variants={fieldItem}>
             <span>Confirm password</span>
-            <input
-              type="password"
+            <PasswordInput
               name="confirm"
               autoComplete="new-password"
               value={confirm}

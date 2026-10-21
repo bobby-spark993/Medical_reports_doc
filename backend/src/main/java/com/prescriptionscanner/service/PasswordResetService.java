@@ -86,12 +86,8 @@ public class PasswordResetService {
 		reset.setExpiresAt(Instant.now().plus(OTP_TTL));
 		resetRepository.save(reset);
 
-		String subject = "Your password reset code";
-		String body = "Your Prescription Scanner password reset code is: " + otp + "\n\n"
-				+ "It expires in " + OTP_TTL.toMinutes() + " minutes. Enter it on the reset page "
-				+ "to choose a new password.\n\nIf you did not request this, you can ignore this email.";
-
-		if (emailService.isAvailable() && emailService.send(email, subject, body)) {
+		if (emailService.isAvailable()
+				&& emailService.sendPasswordResetOtp(email, otp, OTP_TTL.toMinutes())) {
 			log.info("Password reset OTP emailed to {}", email);
 			return;
 		}
