@@ -9,11 +9,13 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 export { API_BASE }
 
 export class ApiError extends Error {
-  constructor(message, status, issues = []) {
+  constructor(message, status, issues = [], retryAfter = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.issues = issues
+    // Seconds to wait before retrying - set by the server on 429 responses.
+    this.retryAfter = retryAfter
   }
 }
 
@@ -50,7 +52,9 @@ export async function apiFetch(path, { body, headers, ...options } = {}) {
 
   if (!response.ok) {
     const message = data?.error || `Request failed (${response.status})`
-    throw new ApiError(message, response.status, data?.issues ?? [])
+    const retryAfterHeader = response.headers.get('retry-after')
+    const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : null
+    throw new ApiError(message, response.status, data?.issues ?? [], Number.isFinite(retryAfter) ? retryAfter : null)
   }
 
   return data

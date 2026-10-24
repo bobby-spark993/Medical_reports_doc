@@ -36,15 +36,27 @@ public class RateLimitService {
 			while (!hits.isEmpty() && hits.peekFirst().isBefore(cutoff)) {
 				hits.pollFirst();
 			}
-			hits.addLast(now);
 
-			if (hits.size() > max) {
+			if (hits.size() >= max) {
+				// Over the limit. This attempt is deliberately not recorded, so
+				// hammering the endpoint cannot push the unlock time further
+				// into the future.
 				Instant oldest = hits.peekFirst();
 				long retry = Math.max(1, Duration.between(now, oldest.plus(window)).toSeconds());
 				return new Decision(false, 0, retry);
 			}
+
+			hits.addLast(now);
 			return new Decision(true, max - hits.size(), 0);
 		}
+	}
+
+	/**
+	 * Forgets the attempts recorded for a key. A successful sign-in calls this,
+	 * so only a run of failures counts against the limit.
+	 */
+	public void reset(String key) {
+		buckets.remove(key);
 	}
 
 	/** Periodic cleanup so a long-running process does not leak keys. */

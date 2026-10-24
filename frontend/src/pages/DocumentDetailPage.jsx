@@ -96,7 +96,9 @@ export default function DocumentDetailPage() {
   }
 
   const { visit, patient } = draft
-  const documentType = (form.documentType || '').trim().toUpperCase()
+  // The server decides the type by the PID rule (the same rule the patient
+  // folder uses), so both pages always agree.
+  const documentType = (visit?.documentType || form.documentType || '').trim().toUpperCase()
   const isPrescription = documentType !== 'LAB_REPORT' && documentType !== 'RADIOLOGY_REPORT'
   const isReport = !isPrescription
   const typeLabel = isPrescription ? 'Prescription' : 'Report'

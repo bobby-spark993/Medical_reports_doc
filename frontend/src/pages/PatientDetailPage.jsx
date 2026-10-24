@@ -29,6 +29,15 @@ function documentTime(visit) {
   return visit.createdAt ? new Date(visit.createdAt).getTime() : 0
 }
 
+// The scan decides the type: the document the PID was printed on is the
+// prescription, every other document is a report.
+function documentTypeLabel(type) {
+  const value = (type || '').trim().toUpperCase()
+  if (value === 'PRESCRIPTION') return { label: 'Prescription', tone: 'ok' }
+  if (value === 'LAB_REPORT' || value === 'RADIOLOGY_REPORT') return { label: 'Report', tone: 'info' }
+  return null
+}
+
 // Pull every dated event in a patient's record into one chronological list:
 // registration, each consultation, advised follow-ups, booked appointments
 // and received lab/radiology documents.
@@ -66,12 +75,13 @@ function buildTimeline({ patient, visits, appointments, documents }) {
   }
 
   visits.forEach((visit) => {
+    const type = documentTypeLabel(visit.documentType)
     events.push({
       key: `visit-${visit.id}`,
       at: documentTime(visit),
       withTime: visit.visitDate ? Boolean(visit.visitTime) : true,
       kind: 'visit',
-      title: 'Consultation',
+      title: type ? type.label : 'Consultation',
       detail: [
         visit.doctor?.name,
         visit.appointmentNo && `Appt no. ${visit.appointmentNo}`,
@@ -79,6 +89,7 @@ function buildTimeline({ patient, visits, appointments, documents }) {
         visit.diagnoses?.length ? `${visit.diagnoses.length} diagnosis recorded` : null,
       ].filter(Boolean).join(' · '),
       href: `/documents/${visit.id}`,
+      type,
       pill: visit.isVerified
         ? { label: 'Verified', tone: 'ok' }
         : { label: 'Draft', tone: 'warn' },
@@ -136,6 +147,7 @@ function buildTimeline({ patient, visits, appointments, documents }) {
 function VisitCard({ visit, canReport, onDelete, deleting }) {
   const [open, setOpen] = useState(true)
   const scanUrl = visit.hasScan ? `${API_BASE}/api/files/${visit.id}` : null
+  const type = documentTypeLabel(visit.documentType)
 
   return (
     <div className="visit">
@@ -147,6 +159,7 @@ function VisitCard({ visit, canReport, onDelete, deleting }) {
         </span>
         <span className="visit__spacer" />
         {visit.followUpDate ? <span className="pill pill--info">Follow-up {formatDate(visit.followUpDate)}</span> : null}
+        {type ? <span className={`pill pill--${type.tone}`}>{type.label}</span> : null}
         <span className={`pill ${visit.isVerified ? 'pill--ok' : 'pill--warn'}`}>{visit.isVerified ? 'Verified' : 'Draft'}</span>
       </button>
 
@@ -412,6 +425,9 @@ export default function PatientDetailPage() {
                   <div className="timeline__body">
                     <div className="timeline__head">
                       <span className="timeline__title">{event.title}</span>
+                      {event.type ? (
+                        <span className={`pill pill--${event.type.tone}`}>{event.type.label}</span>
+                      ) : null}
                       {event.pill ? (
                         <span className={`pill pill--${event.pill.tone}`}>{event.pill.label}</span>
                       ) : null}

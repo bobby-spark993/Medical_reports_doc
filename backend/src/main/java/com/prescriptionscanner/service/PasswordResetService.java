@@ -159,11 +159,12 @@ public class PasswordResetService {
 	private void checkRateLimit(String key) {
 		Duration window = Duration.ofMinutes(props.getRateLimit().getLoginWindowMinutes());
 		RateLimitService.Decision decision = rateLimitService.check(
-				key, props.getRateLimit().getLoginMax(), window);
+				key, props.getRateLimit().getOtpMax(), window);
 		if (!decision.allowed()) {
 			throw ApiException.tooManyRequests(
 					"Too many attempts. Try again in "
-					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).");
+					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).",
+					decision.retryAfterSeconds());
 		}
 	}
 

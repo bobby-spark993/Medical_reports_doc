@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -24,8 +25,11 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ApiError> handleApi(ApiException ex) {
-		return ResponseEntity.status(ex.getStatus())
-				.body(ApiError.of(ex.getMessage(), ex.getIssues()));
+		ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.getStatus());
+		if (ex.getRetryAfterSeconds() != null) {
+			response.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+		}
+		return response.body(ApiError.of(ex.getMessage(), ex.getIssues()));
 	}
 
 	/** Bean-validation failures from @Valid on request bodies. */

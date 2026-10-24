@@ -326,6 +326,479 @@
   font-size: 13.5px;
 }
 
+/* A quiet note under a form - e.g. the login attempts left. */
+.form-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.form-note--warn {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13.5px;
+}
+
+/* The locked-out notice inside the form. The character waits outside it. */
+.lock-scene {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  border: 1px solid #fde68a;
+}
+
+.lock-scene__note {
+  margin: 0;
+  color: #92400e;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* ── The character waiting out the lock ──────────────────────────────────────
+   A CSS 3D rig: the page gives it a perspective, every limb sits on its own
+   plane, so the head really turns and the watch arm sits in front of the
+   body. Gradients + inset shadows give it volume. It lives outside the form,
+   standing in the scene next to the card. */
+.lock-figure {
+  position: absolute;
+  left: clamp(10px, 3.5vw, 76px);
+  bottom: clamp(58px, 8vh, 104px);
+  width: 220px;
+  height: 300px;
+  perspective: 780px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lock-figure__rig {
+  position: relative;
+  width: 220px;
+  height: 300px;
+  transform-style: preserve-3d;
+  animation: lock-turn 9s ease-in-out infinite;
+}
+
+/* ── ground shadow ────────────────────────────────────────────────────────── */
+.lock-figure__shadow {
+  position: absolute;
+  left: 50px;
+  bottom: 4px;
+  width: 120px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(2, 6, 23, 0.55) 0%, rgba(2, 6, 23, 0) 70%);
+  filter: blur(3px);
+  transform: rotateX(74deg);
+  transform-origin: 50% 50%;
+  animation: lock-shadow 3.8s ease-in-out infinite;
+}
+
+/* ── legs ─────────────────────────────────────────────────────────────────── */
+.lock-figure__leg {
+  position: absolute;
+  top: 196px;
+  width: 30px;
+  height: 68px;
+  border-radius: 14px 14px 10px 10px;
+  background: linear-gradient(100deg, #151d2c 0%, #3d4c66 44%, #10182a 100%);
+  box-shadow: inset 3px 0 5px rgba(255, 255, 255, 0.07), inset -4px 0 8px rgba(0, 0, 0, 0.45);
+}
+
+.lock-figure__leg--back {
+  left: 78px;
+  transform: rotate(2.5deg) translateZ(-14px);
+}
+
+.lock-figure__leg--front {
+  left: 112px;
+  transform: rotate(-1.5deg) translateZ(4px);
+}
+
+.lock-figure__shoe {
+  position: absolute;
+  left: -3px;
+  bottom: -7px;
+  width: 36px;
+  height: 15px;
+  border-radius: 8px 12px 6px 6px;
+  background: linear-gradient(180deg, #334155 0%, #0b1120 70%);
+  box-shadow: 0 6px 10px -4px rgba(2, 6, 23, 0.8);
+}
+
+/* ── torso ────────────────────────────────────────────────────────────────── */
+.lock-figure__torso {
+  position: absolute;
+  left: 66px;
+  top: 106px;
+  width: 88px;
+  height: 100px;
+  border-radius: 30px 30px 18px 18px;
+  background: linear-gradient(104deg, #075049 0%, #13ab9c 28%, #0f766e 58%, #06463f 100%);
+  box-shadow:
+    inset 6px 4px 10px rgba(255, 255, 255, 0.14),
+    inset -8px -6px 16px rgba(0, 0, 0, 0.32),
+    0 18px 30px -14px rgba(2, 6, 23, 0.65);
+  transform-origin: 50% 100%;
+  transform-style: preserve-3d;
+  animation: lock-breathe 3.8s ease-in-out infinite;
+}
+
+.lock-figure__collar {
+  position: absolute;
+  left: 30px;
+  top: -5px;
+  width: 28px;
+  height: 16px;
+  border-radius: 4px 4px 12px 12px;
+  background: linear-gradient(180deg, #f1f7f5 0%, #c3d6d2 100%);
+  box-shadow: 0 3px 6px rgba(2, 6, 23, 0.35);
+  transform: translateZ(3px);
+}
+
+.lock-figure__pocket {
+  position: absolute;
+  left: 12px;
+  top: 44px;
+  width: 22px;
+  height: 20px;
+  border-radius: 3px 3px 8px 8px;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  border-top: none;
+  transform: translateZ(2px);
+}
+
+/* ── arms ─────────────────────────────────────────────────────────────────── */
+.lock-figure__arm {
+  position: absolute;
+  top: 112px;
+  width: 24px;
+  height: 60px;
+  border-radius: 14px;
+  transform-origin: 50% 0%;
+  transform-style: preserve-3d;
+}
+
+.lock-figure__arm--far {
+  left: 52px;
+  transform: rotate(7deg) translateZ(-10px);
+}
+
+.lock-figure__arm--watch {
+  left: 136px;
+  transform: rotate(17deg) translateZ(10px);
+}
+
+.lock-figure__forearm {
+  position: absolute;
+  width: 20px;
+  border-radius: 12px;
+  background: linear-gradient(96deg, #cd9163 0%, #f7cfa8 34%, #f0bd95 62%, #c2875b 100%);
+  box-shadow: inset -3px 0 6px rgba(120, 70, 35, 0.35), inset 2px 0 4px rgba(255, 255, 255, 0.35);
+}
+
+.lock-figure__forearm--far {
+  left: 9px;
+  top: 54px;
+  height: 48px;
+  transform-origin: 50% 0%;
+  transform: rotate(4deg);
+}
+
+.lock-figure__forearm--watch {
+  left: 17px;
+  top: -6px;
+  height: 64px;
+  transform-origin: 50% 100%;
+  transform: rotate(-42deg);
+}
+
+.lock-figure__hand {
+  position: absolute;
+  width: 21px;
+  height: 19px;
+  border-radius: 46% 54% 50% 50%;
+  background: radial-gradient(70% 70% at 34% 28%, #fbe0c2 0%, #f0bf98 58%, #cd9062 100%);
+  box-shadow: inset -2px -2px 5px rgba(120, 70, 35, 0.32);
+}
+
+.lock-figure__hand--far {
+  left: 8px;
+  top: 98px;
+  transform: rotate(4deg);
+}
+
+.lock-figure__hand--watch {
+  left: -26px;
+  top: 1px;
+  transform: translateZ(6px);
+}
+
+/* ── the watch ────────────────────────────────────────────────────────────── */
+.lock-figure__watch {
+  position: absolute;
+  left: -22px;
+  top: 5px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, #e6ecf3 0%, #93a4b8 18%, #f4f8fc 36%, #7d8ea3 54%, #cdd7e2 72%, #e6ecf3 100%);
+  box-shadow:
+    0 6px 12px -4px rgba(2, 6, 23, 0.75),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  transform: rotate(-42deg) translateZ(10px);
+  transform-style: preserve-3d;
+}
+
+.lock-figure__watch::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: radial-gradient(58% 58% at 36% 28%, #ffffff 0%, #eef2f8 56%, #c3ccd9 100%);
+  box-shadow: inset 0 2px 5px rgba(15, 23, 42, 0.25);
+}
+
+/* hour ticks */
+.lock-figure__watch::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(71, 85, 105, 0.85) 0deg 2deg, transparent 2deg 30deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 68%, #000 70%);
+  mask: radial-gradient(circle, transparent 0 68%, #000 70%);
+}
+
+/* the amber ring empties as the lock runs down */
+.lock-figure__watch-ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(#f59e0b calc(var(--lock-progress, 1) * 360deg), rgba(245, 158, 11, 0.14) 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 76%, #000 78%);
+  mask: radial-gradient(circle, transparent 0 76%, #000 78%);
+  filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.55));
+}
+
+/* the sweeping hand */
+.lock-figure__watch-hand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 11px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #1e293b;
+  transform-origin: 50% 0%;
+  animation: lock-sweep 30s linear infinite;
+}
+
+/* ── neck + head ──────────────────────────────────────────────────────────── */
+.lock-figure__neck {
+  position: absolute;
+  left: 96px;
+  top: 84px;
+  width: 26px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(100deg, #b87d52 0%, #e8b78d 44%, #c78c5f 100%);
+  box-shadow: inset 0 7px 9px -5px rgba(74, 38, 16, 0.75);
+  transform: translateZ(4px);
+}
+
+.lock-figure__head {
+  position: absolute;
+  left: 78px;
+  top: 18px;
+  width: 64px;
+  height: 74px;
+  border-radius: 50% 48% 46% 52% / 56% 54% 46% 44%;
+  background: radial-gradient(68% 64% at 32% 25%, #fde5ca 0%, #f4c8a1 44%, #d99b6d 76%, #b57a50 100%);
+  box-shadow:
+    inset -6px -6px 14px rgba(140, 82, 44, 0.32),
+    inset 5px 5px 12px rgba(255, 255, 255, 0.28),
+    0 14px 22px -12px rgba(2, 6, 23, 0.7);
+  transform-origin: 50% 100%;
+  transform-style: preserve-3d;
+  animation: lock-look 5.6s ease-in-out infinite;
+}
+
+.lock-figure__hair {
+  position: absolute;
+  left: -3px;
+  top: -6px;
+  width: 70px;
+  height: 48px;
+  border-radius: 62% 44% 26% 16% / 96% 82% 16% 12%;
+  background: linear-gradient(118deg, #16100a 0%, #4a3826 36%, #241b12 72%, #100b07 100%);
+  box-shadow: inset 4px 4px 8px rgba(255, 255, 255, 0.08), 0 5px 8px -4px rgba(2, 6, 23, 0.6);
+  transform: translateZ(2px);
+}
+
+.lock-figure__brow {
+  position: absolute;
+  width: 14px;
+  height: 3.4px;
+  border-radius: 2px;
+  background: #2b2117;
+  transform: translateZ(5px);
+}
+
+.lock-figure__brow--left {
+  left: 12px;
+  top: 31px;
+  transform: translateZ(5px) rotate(4deg);
+}
+
+.lock-figure__brow--right {
+  left: 33px;
+  top: 28px;
+  transform: translateZ(5px) rotate(-9deg);
+}
+
+.lock-figure__eye {
+  position: absolute;
+  width: 7px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #4c3b31 0%, #241b14 58%, #120c08 100%);
+  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, 0.18);
+  transform-origin: 50% 50%;
+  animation: lock-blink 4.8s ease-in-out infinite;
+}
+.lock-figure__eye::after {
+  content: '';
+  position: absolute;
+  left: 1.5px;
+  top: 1.5px;
+  width: 2.4px;
+  height: 2.4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.lock-figure__eye--left {
+  left: 14px;
+  top: 38px;
+}
+
+.lock-figure__eye--right {
+  left: 34px;
+  top: 37px;
+}
+
+.lock-figure__nose {
+  position: absolute;
+  left: 43px;
+  top: 38px;
+  width: 9px;
+  height: 14px;
+  border-radius: 42% 62% 62% 42% / 56% 60% 44% 44%;
+  background: linear-gradient(100deg, #f7d3ae 0%, #e0a97c 70%, #c4865b 100%);
+  box-shadow: inset -2px -2px 4px rgba(140, 82, 44, 0.3);
+  transform: translateZ(8px);
+}
+
+.lock-figure__mouth {
+  position: absolute;
+  left: 27px;
+  top: 55px;
+  width: 18px;
+  height: 5px;
+  border-radius: 0 0 70% 70%;
+  background: linear-gradient(180deg, #b4695c 0%, #8e4f45 100%);
+  box-shadow: 0 1px 2px rgba(2, 6, 23, 0.35);
+  transform: translateZ(4px);
+}
+
+/* ── waiting dots ─────────────────────────────────────────────────────────── */
+.lock-figure__dots {
+  position: absolute;
+  left: 92px;
+  top: -30px;
+  display: flex;
+  gap: 7px;
+  transform: translateZ(20px);
+}
+
+.lock-figure__dots i {
+  --dy: 0px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #6fe3d4 0%, #0f766e 70%);
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.6);
+  animation: lock-dot 1.8s ease-in-out infinite;
+}
+
+.lock-figure__dots i:nth-child(2) {
+  animation-delay: 0.22s;
+  --dy: -3px;
+}
+
+.lock-figure__dots i:nth-child(3) {
+  animation-delay: 0.44s;
+}
+
+/* ── motion ───────────────────────────────────────────────────────────────── */
+@keyframes lock-turn {
+  0%, 100% { transform: rotateY(-13deg) rotateX(3deg); }
+  50% { transform: rotateY(-2deg) rotateX(1deg); }
+}
+
+@keyframes lock-breathe {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-2.5px) scaleY(1.012); }
+}
+
+@keyframes lock-look {
+  0%, 100% { transform: rotateY(13deg) rotateX(9deg) translateZ(12px); }
+  50% { transform: rotateY(18deg) rotateX(13deg) translateZ(12px); }
+}
+
+@keyframes lock-shadow {
+  0%, 100% { opacity: 0.85; transform: rotateX(74deg) scaleX(1); }
+  50% { opacity: 0.7; transform: rotateX(74deg) scaleX(0.94); }
+}
+
+@keyframes lock-blink {
+  0%, 87%, 100% { transform: translateZ(6px) scaleY(1); }
+  92%, 96% { transform: translateZ(6px) scaleY(0.08); }
+}
+
+@keyframes lock-sweep {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes lock-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(var(--dy, 0px)) scale(0.8); }
+  50% { opacity: 1; transform: translateY(var(--dy, 0px)) scale(1.2); }
+}
+
+/* Not enough room beside the card on narrow screens. */
+@media (max-width: 1150px) {
+  .lock-figure {
+    display: none;
+  }
+}
+
+/* Only for screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ── Shell / layout ──────────────────────────────────────────────────────── */
 .shell {
   display: grid;
@@ -2023,6 +2496,11 @@
   .scene__parallax {
     transform: none;
   }
+
+  .lock-figure *,
+  .lock-figure {
+    animation: none !important;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2124,6 +2602,183 @@
     11px 11px 24px rgba(6, 46, 42, 0.55),
     -8px -8px 18px rgba(255, 255, 255, 0.9),
     inset 2px 2px 5px rgba(255, 255, 255, 0.5);
+}
+
+/* ── Landscape register card (brand panel + two-column form) ─────────────── */
+.auth--register .auth__card--landscape {
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.18fr);
+  padding: 0;
+  overflow: hidden;
+}
+
+.auth__pane {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 34px;
+  overflow: hidden;
+  color: #eafff9;
+  background:
+    radial-gradient(420px 300px at 12% 0%, rgba(94, 234, 212, 0.42), transparent 62%),
+    linear-gradient(160deg, #0f766e 0%, #0d9488 48%, #0b3f3a 100%);
+  border-radius: 26px 0 0 26px;
+}
+
+/* Soft glow in the lower corner so the flat panel keeps the clay depth. */
+.auth__pane::after {
+  content: '';
+  position: absolute;
+  right: -80px;
+  bottom: -100px;
+  z-index: -1;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(94, 234, 212, 0.4), transparent 68%);
+}
+
+.auth__pane .brand-mark {
+  box-shadow:
+    6px 6px 16px rgba(0, 0, 0, 0.35),
+    -4px -4px 12px rgba(94, 234, 212, 0.35);
+}
+
+.auth__pane .brand-mark:hover {
+  box-shadow:
+    8px 8px 20px rgba(0, 0, 0, 0.4),
+    -5px -5px 14px rgba(94, 234, 212, 0.45);
+}
+
+.auth__pane h1 {
+  margin: 12px 0 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.auth__pane p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(226, 255, 249, 0.78);
+}
+
+.auth__benefits {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: rgba(226, 255, 249, 0.92);
+}
+
+.auth__benefits li {
+  position: relative;
+  padding-left: 24px;
+  line-height: 1.45;
+}
+
+.auth__benefits li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(94, 234, 212, 0.95);
+  box-shadow: inset 0 0 0 3.5px rgba(8, 47, 73, 0.35);
+}
+
+.auth__main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 36px;
+}
+
+.auth__form--split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+}
+
+.auth__form--split .form-error,
+.auth__form--split .btn--primary {
+  grid-column: 1 / -1;
+}
+
+.auth__main .auth__hint {
+  margin: 16px 0 0;
+  text-align: left;
+}
+
+/* Stack the panels on tablets and phones. */
+@media (max-width: 820px) {
+  .auth--register .auth__card--landscape {
+    max-width: 460px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auth__pane {
+    align-items: center;
+    padding: 26px 24px;
+    text-align: center;
+    border-radius: 26px 26px 0 0;
+  }
+
+  .auth__pane h1 {
+    margin-top: 10px;
+    font-size: 20px;
+  }
+
+  .auth__pane p {
+    max-width: 36ch;
+  }
+
+  .auth__benefits {
+    display: none;
+  }
+
+  .auth__main {
+    padding: 26px 24px 30px;
+  }
+
+  .auth__main .auth__hint {
+    text-align: center;
+  }
+
+  .auth__form--split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Short laptop screens: tighten the card so both panels fit without scroll. */
+@media (min-width: 821px) and (max-height: 720px) {
+  .auth__pane,
+  .auth__main {
+    padding: 28px 32px;
+  }
+
+  .auth__pane h1 {
+    margin-top: 8px;
+    font-size: 21px;
+  }
+
+  .auth__benefits {
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 12.5px;
+  }
+
+  .auth__form--split {
+    gap: 11px 16px;
+  }
 }
 
 /* ── Minimalism (authenticated app) ─────────────────────────────────────────

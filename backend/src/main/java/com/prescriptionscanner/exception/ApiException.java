@@ -11,15 +11,23 @@ public class ApiException extends RuntimeException {
 
 	private final HttpStatus status;
 	private final List<ApiError.FieldIssue> issues;
+	/** Seconds the client should wait before retrying - sent as Retry-After. */
+	private final Long retryAfterSeconds;
 
 	public ApiException(HttpStatus status, String message) {
 		this(status, message, List.of());
 	}
 
 	public ApiException(HttpStatus status, String message, List<ApiError.FieldIssue> issues) {
+		this(status, message, issues, null);
+	}
+
+	public ApiException(HttpStatus status, String message, List<ApiError.FieldIssue> issues,
+			Long retryAfterSeconds) {
 		super(message);
 		this.status = status;
 		this.issues = issues;
+		this.retryAfterSeconds = retryAfterSeconds;
 	}
 
 	public HttpStatus getStatus() {
@@ -28,6 +36,10 @@ public class ApiException extends RuntimeException {
 
 	public List<ApiError.FieldIssue> getIssues() {
 		return issues;
+	}
+
+	public Long getRetryAfterSeconds() {
+		return retryAfterSeconds;
 	}
 
 	public static ApiException badRequest(String message) {
@@ -56,6 +68,11 @@ public class ApiException extends RuntimeException {
 
 	public static ApiException tooManyRequests(String message) {
 		return new ApiException(HttpStatus.TOO_MANY_REQUESTS, message);
+	}
+
+	/** A 429 that also tells the client when it may try again. */
+	public static ApiException tooManyRequests(String message, long retryAfterSeconds) {
+		return new ApiException(HttpStatus.TOO_MANY_REQUESTS, message, List.of(), Math.max(1, retryAfterSeconds));
 	}
 
 	public static ApiException badGateway(String message) {

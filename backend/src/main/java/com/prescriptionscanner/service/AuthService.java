@@ -61,16 +61,21 @@ public class AuthService {
 
 	@Transactional
 	public LoginResult login(LoginRequest request, String clientIp) {
+		String email = request.email().trim().toLowerCase();
+
+		// One bucket per IP + email: a couple of typos on one account must not
+		// lock out the rest of the clinic sharing the same connection.
+		String key = "login:" + clientIp + ":" + email;
 		Duration window = Duration.ofMinutes(props.getRateLimit().getLoginWindowMinutes());
 		RateLimitService.Decision decision = rateLimitService.check(
-				"login:" + clientIp, props.getRateLimit().getLoginMax(), window);
+				key, props.getRateLimit().getLoginMax(), window);
 		if (!decision.allowed()) {
 			throw ApiException.tooManyRequests(
-					"Too many login attempts. Try again in "
-					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).");
+					"Too many failed sign-in attempts. Try again in "
+					+ humanizeDuration(decision.retryAfterSeconds()) + ".",
+					decision.retryAfterSeconds());
 		}
 
-		String email = request.email().trim().toLowerCase();
 		Optional<User> maybe = userRepository.findByEmailIgnoreCase(email);
 
 		boolean passwordMatches = passwordEncoder.matches(
@@ -83,10 +88,23 @@ public class AuthService {
 			throw ApiException.unauthorized("Incorrect email or password");
 		}
 
+		// A successful sign-in clears the streak, so only a run of failures
+		// counts against the limit.
+		rateLimitService.reset(key);
+
 		User user = maybe.get();
 		String token = jwtService.issue(user);
 		auditService.record(user.getId(), AuditService.LOGIN, "User", user.getId());
 		return new LoginResult(token, UserDto.from(user));
+	}
+
+	/** "45 seconds" / "3 minutes" - for messages shown on the login page. */
+	private static String humanizeDuration(long seconds) {
+		if (seconds < 60) {
+			return seconds + (seconds == 1 ? " second" : " seconds");
+		}
+		long minutes = Math.max(1, seconds / 60);
+		return minutes + (minutes == 1 ? " minute" : " minutes");
 	}
 
 	/**
@@ -97,11 +115,12 @@ public class AuthService {
 	public LoginResult register(RegisterRequest request, String clientIp) {
 		Duration window = Duration.ofMinutes(props.getRateLimit().getLoginWindowMinutes());
 		RateLimitService.Decision decision = rateLimitService.check(
-				"register:" + clientIp, props.getRateLimit().getLoginMax(), window);
+				"register:" + clientIp, props.getRateLimit().getRegisterMax(), window);
 		if (!decision.allowed()) {
 			throw ApiException.tooManyRequests(
 					"Too many sign-up attempts. Try again in "
-					+ Math.max(1, decision.retryAfterSeconds() / 60) + " minute(s).");
+					+ humanizeDuration(decision.retryAfterSeconds()) + ".",
+					decision.retryAfterSeconds());
 		}
 
 		String email = request.email().trim().toLowerCase();

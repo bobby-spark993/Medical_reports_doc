@@ -99,8 +99,13 @@ public class AppProperties {
 	}
 
 	public static class RateLimit {
-		private int loginMax = 10;
+		/** Failed sign-in attempts allowed per email + IP inside the window. */
+		private int loginMax = 5;
 		private int loginWindowMinutes = 15;
+		/** Sign-ups allowed per IP inside the same window. */
+		private int registerMax = 10;
+		/** OTP requests / code checks allowed per IP inside the same window. */
+		private int otpMax = 10;
 		private int uploadMax = 20;
 		private int uploadWindowMinutes = 60;
 
@@ -108,6 +113,10 @@ public class AppProperties {
 		public void setLoginMax(int loginMax) { this.loginMax = loginMax; }
 		public int getLoginWindowMinutes() { return loginWindowMinutes; }
 		public void setLoginWindowMinutes(int loginWindowMinutes) { this.loginWindowMinutes = loginWindowMinutes; }
+		public int getRegisterMax() { return registerMax; }
+		public void setRegisterMax(int registerMax) { this.registerMax = registerMax; }
+		public int getOtpMax() { return otpMax; }
+		public void setOtpMax(int otpMax) { this.otpMax = otpMax; }
 		public int getUploadMax() { return uploadMax; }
 		public void setUploadMax(int uploadMax) { this.uploadMax = uploadMax; }
 		public int getUploadWindowMinutes() { return uploadWindowMinutes; }

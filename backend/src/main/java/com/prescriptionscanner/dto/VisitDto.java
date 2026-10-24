@@ -16,6 +16,8 @@ public record VisitDto(
 		String mode,
 		LocalDate followUpDate,
 		String notes,
+		/** PRESCRIPTION, LAB_REPORT, ... - decided by the PID rule, see DocumentClassifier. */
+		String documentType,
 		boolean isVerified,
 		boolean hasScan,
 		String batchId,
@@ -60,8 +62,11 @@ public record VisitDto(
 	/**
 	 * Full mapping. Call inside a transaction: it touches the lazy children and
 	 * the doctor association.
+	 *
+	 * <p>The document type is passed in rather than read here, because it comes
+	 * from the stored extraction and is decided by the PID rule.
 	 */
-	public static VisitDto from(Visit v) {
+	public static VisitDto from(Visit v, String documentType) {
 		DoctorDto doctor = v.getDoctor() == null ? null : new DoctorDto(
 				v.getDoctor().getId(),
 				v.getDoctor().getName(),
@@ -93,6 +98,7 @@ public record VisitDto(
 				v.getMode(),
 				v.getFollowUpDate(),
 				v.getNotes(),
+				documentType,
 				v.isVerified(),
 				v.getScanFilePath() != null && !v.getScanFilePath().isBlank(),
 				v.getBatchId(),

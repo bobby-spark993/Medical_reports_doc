@@ -116,8 +116,8 @@ public class PrescriptionService {
 		StorageService.StoredFile stored = storageService.save(bytes, mimeType);
 
 		try {
-			GeminiExtraction extraction = geminiService.extract(bytes, mimeType,
-					buildContextHint(contextName, contextPhone, contextPid));
+			GeminiExtraction extraction = documentClassifier.apply(geminiService.extract(bytes, mimeType,
+					buildContextHint(contextName, contextPhone, contextPid)));
 
 			String rawJson = serializeRawAi(extraction, actorId);
 
@@ -153,8 +153,8 @@ public class PrescriptionService {
 	public ScanDraftResponse scan(MultipartFile file, Long actorId, String clientIp) {
 		enforceRateLimit(actorId, clientIp);
 		ValidatedFile validated = validateFile(file);
-		GeminiExtraction extraction = geminiService.extract(validated.bytes(), validated.mimeType(),
-				buildContextHint(null, null, null));
+		GeminiExtraction extraction = documentClassifier.apply(geminiService.extract(validated.bytes(),
+				validated.mimeType(), buildContextHint(null, null, null)));
 		PatientSummaryDto matchedPatient = findMatchedPatient(extraction)
 				.map(this::toSummary)
 				.orElse(null);
@@ -575,7 +575,7 @@ public class PrescriptionService {
 				.orElse(null);
 
 		return new DraftResult(
-				VisitDto.from(visit),
+				VisitDto.from(visit, documentClassifier.typeOf(visit)),
 				extracted,
 				visit.getRawAiJson(),
 				matchedPatient,

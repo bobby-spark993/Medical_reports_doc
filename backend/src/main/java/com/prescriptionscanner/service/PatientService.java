@@ -36,15 +36,17 @@ public class PatientService {
 	private final AppointmentRepository appointmentRepository;
 	private final AuditService auditService;
 	private final MedicalDocumentService medicalDocumentService;
+	private final DocumentClassifier documentClassifier;
 
 	public PatientService(PatientRepository patientRepository, VisitRepository visitRepository,
 			AppointmentRepository appointmentRepository, AuditService auditService,
-			MedicalDocumentService medicalDocumentService) {
+			MedicalDocumentService medicalDocumentService, DocumentClassifier documentClassifier) {
 		this.patientRepository = patientRepository;
 		this.visitRepository = visitRepository;
 		this.appointmentRepository = appointmentRepository;
 		this.auditService = auditService;
 		this.medicalDocumentService = medicalDocumentService;
+		this.documentClassifier = documentClassifier;
 	}
 
 	// Not readOnly: these methods write an audit entry, and a read-only
@@ -127,7 +129,11 @@ public class PatientService {
 		LocalDate today = LocalDate.now();
 		LocalDateTime now = LocalDateTime.now();
 
-		List<VisitDto> visitDtos = visits.stream().map(VisitDto::from).toList();
+		// The document type is decided by the PID rule, so the folder shows the
+		// document the PID was printed on as the prescription.
+		List<VisitDto> visitDtos = visits.stream()
+				.map(v -> VisitDto.from(v, documentClassifier.typeOf(v)))
+				.toList();
 
 		List<PatientDetailResponse.AppointmentDto> appointmentDtos = appointments.stream()
 				.map(a -> new PatientDetailResponse.AppointmentDto(

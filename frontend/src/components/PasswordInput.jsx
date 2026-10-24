@@ -64,6 +64,7 @@ export default function PasswordInput({
         className="field__toggle"
         onClick={() => setVisible((current) => !current)}
         onMouseDown={(event) => event.preventDefault()}
+        disabled={props.disabled}
         aria-label={label}
         aria-pressed={visible}
         title={label}
