@@ -64,9 +64,10 @@ public class AuthController {
 	}
 
 	/**
-	 * Issues a 6-digit OTP for password reset. The OTP is logged to the server
-	 * console (no SMTP is configured yet) and the response is the same whether or
-	 * not the email exists, to avoid account enumeration.
+	 * Issues a 6-digit OTP for password reset and emails it to the account.
+	 * Returns 502 when SMTP is configured but the mail server refuses the
+	 * message, so the user is never told a code was sent when it was not.
+	 * Without SMTP (local development) the code is printed to the server log.
 	 */
 	@PostMapping("/forgot-password")
 	public ResponseEntity<OkResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request,

@@ -47,8 +47,20 @@ MAIL_FROM=Prescription Scanner <you@gmail.com>
 
 `scripts/run-backend.mjs` loads `.env` automatically for `pnpm run dev`. One
 Gmail app password can be reused in every project — Google does not require a
-unique one per project. If SMTP is not configured, the OTP is printed to the
-server console instead (so staff can always reset a password).
+unique one per project. Without SMTP the OTP is printed to the server console
+(so local development still works). When SMTP **is** configured but the mail
+server refuses the message — for example Gmail answering `535-5.7.8 Username
+and Password not accepted` because the app password was revoked — the forgot-
+password request fails with a 502, the user sees an error, and the backend log
+records the provider's exact reason:
+
+```
+ERROR c.p.service.PasswordResetService - Password reset OTP could not be emailed to you@example.com: 535-5.7.8 Username and Password not accepted...
+```
+
+Fix that by generating a fresh app password at
+<https://myaccount.google.com/apppasswords> (2-Step Verification must be on),
+updating `SMTP_PASSWORD`, and restarting the backend.
 
 Setup:
 

@@ -24,9 +24,10 @@ import com.prescriptionscanner.repository.UserRepository;
  *
  * <p>The email is validated (registered account + domain can receive mail)
  * before a code is issued. The code is emailed to the account when SMTP is
- * configured, otherwise it is written to the application log in a banner so a
- * password can always be reset. The code itself is stored only as a bcrypt
- * hash and expires after 10 minutes.
+ * configured; if the mail server refuses it the request fails with a 502 so the
+ * user is not told a code was sent. Without SMTP the code is written to the
+ * application log in a banner, which keeps local development working. The code
+ * itself is stored only as a bcrypt hash and expires after 10 minutes.
  */
 @Service
 public class PasswordResetService {
@@ -86,18 +87,35 @@ public class PasswordResetService {
 		reset.setExpiresAt(Instant.now().plus(OTP_TTL));
 		resetRepository.save(reset);
 
-		if (emailService.isAvailable()
-				&& emailService.sendPasswordResetOtp(email, otp, OTP_TTL.toMinutes())) {
+		if (!emailService.isAvailable()) {
+			logOtpToConsole(email, otp);
+			return;
+		}
+
+		EmailService.Delivery delivery = emailService.sendPasswordResetOtp(email, otp, OTP_TTL.toMinutes());
+		if (delivery.sent()) {
 			log.info("Password reset OTP emailed to {}", email);
 			return;
 		}
 
+		// SMTP is configured but the server refused the message (typically a bad
+		// app password). Fail loudly instead of reporting success: otherwise the
+		// user waits for a code that will never arrive. Throwing rolls the
+		// transaction back, so the stored hash is discarded.
+		log.error("Password reset OTP could not be emailed to {}: {}", email, delivery.failure());
+		throw ApiException.badGateway(
+				"We could not send the reset email. Try again in a moment; if it keeps"
+						+ " failing, an administrator needs to check the email settings.");
+	}
+
+	/** Development fallback: without SMTP the code is printed, not emailed. */
+	private void logOtpToConsole(String email, String otp) {
 		log.warn("==========================================================");
 		log.warn(" Password reset OTP for {}", email);
 		log.warn("   otp : {}", otp);
 		log.warn("   expires in {} minutes", OTP_TTL.toMinutes());
-		log.warn(" Email is not configured, so the code is shown here instead.");
-		log.warn(" Set spring.mail.host/username/password to deliver it by email.");
+		log.warn(" Email is not configured (spring.mail.host is empty), so the");
+		log.warn(" code is printed here instead of being emailed.");
 		log.warn("==========================================================");
 	}
 

@@ -1,7 +1,10 @@
 package com.prescriptionscanner.service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.prescriptionscanner.config.AppProperties;
 
+import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 
 /**
@@ -32,6 +36,9 @@ public class EmailService {
 	private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
 	private static final String LOGO_CID = "clinicLogo";
+
+	/** Matches an SMTP reply such as "535-5.7.8" or "535 5.7.8". */
+	private static final Pattern SMTP_REPLY = Pattern.compile("\\b\\d{3}[- ]\\d\\.\\d+\\.\\d+\\b");
 
 	private final ObjectProvider<JavaMailSender> senderProvider;
 	private final SettingsService settingsService;
@@ -55,14 +62,30 @@ public class EmailService {
 	}
 
 	/**
-	 * Emails a password-reset OTP as branded HTML with the clinic logo embedded
-	 * inline. Returns true when delivered, false when no SMTP is configured or
-	 * the send failed (the caller then logs the code to the console instead).
+	 * Outcome of one send attempt. {@code sent} is false when SMTP is missing or
+	 * the server refused the message; {@code failure} then holds the provider's
+	 * own reason (for example Gmail's "535-5.7.8 Username and Password not
+	 * accepted"), which is safe for logs but never shown to the user.
 	 */
-	public boolean sendPasswordResetOtp(String to, String otp, long expiresInMinutes) {
+	public record Delivery(boolean sent, String failure) {
+		static Delivery ok() {
+			return new Delivery(true, null);
+		}
+
+		static Delivery error(String failure) {
+			return new Delivery(false, failure);
+		}
+	}
+
+	/**
+	 * Emails a password-reset OTP as branded HTML with the clinic logo embedded
+	 * inline. The result distinguishes "delivered" from "refused", so the caller
+	 * can tell the user instead of pretending the code was sent.
+	 */
+	public Delivery sendPasswordResetOtp(String to, String otp, long expiresInMinutes) {
 		JavaMailSender sender = senderProvider.getIfAvailable();
 		if (sender == null) {
-			return false;
+			return Delivery.error("no JavaMailSender bean is configured");
 		}
 
 		Optional<StorageService.LoadedFile> logo = settingsService.logo();
@@ -79,20 +102,71 @@ public class EmailService {
 				helper.setFrom(senderAddress);
 			}
 			helper.setTo(to);
-			helper.setSubject("Your password reset code");
+			helper.setSubject("Your password reset code: " + otp);
 			helper.setText(text, html);
 			if (logo.isPresent()) {
 				StorageService.LoadedFile file = logo.get();
 				helper.addInline(LOGO_CID, new ByteArrayResource(file.data()), file.contentType());
 			}
 			sender.send(message);
-			return true;
+			return Delivery.ok();
 		} catch (Exception ex) {
-			log.warn("Could not send email to {}: {}", to, ex.getMessage());
-			return false;
+			String reason = describe(ex);
+			log.warn("Could not send email to {}: {}", to, reason);
+			return Delivery.error(reason);
 		}
 	}
 
+	/**
+	 * Picks the most useful message out of the mail exception chain. Spring wraps
+	 * JavaMail failures (MailSendException -> AuthenticationFailedException) and
+	 * JavaMail nests the server's reply in {@code nextException}, so both chains
+	 * are walked. The SMTP reply, e.g. "535-5.7.8 Username and Password not
+	 * accepted", is preferred because it says what actually needs fixing.
+	 */
+	private static String describe(Exception ex) {
+		List<String> messages = new ArrayList<>();
+		collectMessages(ex, messages, 0);
+		if (messages.isEmpty()) {
+			return ex.getClass().getSimpleName();
+		}
+		for (String message : messages) {
+			if (SMTP_REPLY.matcher(message).find()) {
+				return message;
+			}
+		}
+		// No SMTP reply: the deepest message is normally the most specific one.
+		return messages.get(messages.size() - 1);
+	}
+
+	private static void collectMessages(Throwable ex, List<String> out, int depth) {
+		if (ex == null || depth > 8) {
+			return;
+		}
+		String message = normalize(ex.getMessage());
+		if (message != null && !out.contains(message)) {
+			out.add(message);
+		}
+		if (ex instanceof MessagingException mail) {
+			collectMessages(mail.getNextException(), out, depth + 1);
+		}
+		collectMessages(ex.getCause(), out, depth + 1);
+	}
+
+	/** SMTP replies are multi-line; keep each log entry and JSON message on one line. */
+	private static String normalize(String message) {
+		if (message == null || message.isBlank()) {
+			return null;
+		}
+		return message.replaceAll("\\s+", " ").trim();
+	}
+
+	/**
+	 * Gmail threads messages that share a subject and the same participants, and
+	 * a muted or archived thread keeps later messages out of the inbox - which
+	 * silently hides every new OTP. Putting the code in the subject keeps each
+	 * message in its own conversation (and shows the code without opening it).
+	 */
 	private static String otpHtml(String otp, long expiresInMinutes, boolean hasLogo) {
 		String logo = hasLogo
 				? "<img src=\"cid:" + LOGO_CID + "\" alt=\"Prescription Scanner\" "
